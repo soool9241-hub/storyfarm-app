@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database, Lock } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet } from 'lucide-react'
+import HometaxImport from '../components/HometaxImport'
 import { krw } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import CrudModal from '../components/CrudModal'
@@ -71,6 +72,7 @@ export default function Income() {
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<Record<string, string | number>>({})
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [hometaxOpen, setHometaxOpen] = useState(false)
 
   // Supabase 펜션 매출 데이터
   const [pensionRevenue, setPensionRevenue] = useState<ReservationRevenue[]>([])
@@ -161,6 +163,20 @@ export default function Income() {
     setDeleteId(null)
   }
 
+  const handleHometaxImport = (items: { date: string; desc: string; counterparty: string; amount: number; type: string; biz: string }[]) => {
+    const newItems = items.map(item => ({
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      date: item.date,
+      desc: item.desc,
+      biz: item.biz,
+      type: item.type,
+      amount: item.amount,
+      confirmed: true,
+      counterparty: item.counterparty,
+    }))
+    setList(prev => [...newItems, ...prev])
+  }
+
   // 차트 데이터 계산
   const pensionTotal = pensionRevenue
     .filter(r => r.status !== 'cancelled')
@@ -185,9 +201,14 @@ export default function Income() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">수입 관리</h2>
-        <button onClick={openAdd} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">
-          <Plus size={16} /> 수입 등록
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setHometaxOpen(true)} className="flex items-center gap-1.5 bg-[#3498db] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#2980b9] transition-colors">
+            <FileSpreadsheet size={16} /> 홈택스
+          </button>
+          <button onClick={openAdd} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">
+            <Plus size={16} /> 수입 등록
+          </button>
+        </div>
       </div>
 
       {/* 총 매출 요약 */}
@@ -366,6 +387,7 @@ export default function Income() {
 
       <CrudModal open={modal} title={editId ? '수입 수정' : '수입 등록'} fields={FIELDS} values={form} onChange={(k, v) => setForm(p => ({ ...p, [k]: v }))} onSave={save} onClose={() => setModal(false)} />
       <ConfirmDialog open={!!deleteId} message="이 수입 내역을 삭제하시겠습니까?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} />
+      <HometaxImport open={hometaxOpen} onClose={() => setHometaxOpen(false)} onImport={handleHometaxImport} />
     </div>
   )
 }
