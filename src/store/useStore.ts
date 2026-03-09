@@ -3,7 +3,7 @@ import { create } from 'zustand'
 export type TabId =
   | 'dashboard' | 'income' | 'expense' | 'debt'
   | 'bep' | 'cashflow' | 'assets' | 'tax'
-  | 'yearly' | 'data' | 'ai'
+  | 'yearly' | 'data' | 'ai' | 'team'
 
 interface AppState {
   activeTab: TabId

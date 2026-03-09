@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { krw } from '../lib/format'
+import CrudModal from '../components/CrudModal'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 const channelData = [
   { name: 'CNC 가공', value: 2500000, color: '#2E7D32' },
@@ -17,7 +19,7 @@ const monthlyData = [
   { month: '3월', 공방: 3850000, 펜션: 800000 },
 ]
 
-const incomeList = [
+const INIT_LIST = [
   { id: '1', date: '2026-03-22', desc: 'SUS304 정밀부품 100EA', biz: '공방', type: 'CNC가공', amount: 5000000, confirmed: false, counterparty: '삼성전자 협력사' },
   { id: '2', date: '2026-03-12', desc: 'MDF 레이저커팅 간판', biz: '공방', type: '레이저', amount: 500000, confirmed: true, counterparty: '로컬카페' },
   { id: '3', date: '2026-03-07', desc: 'SUS304 브라켓 30EA', biz: '공방', type: 'CNC가공', amount: 1800000, confirmed: true, counterparty: '현대모비스' },
@@ -25,65 +27,56 @@ const incomeList = [
   { id: '5', date: '2026-03-01', desc: '달팽이아지트 객실 2박', biz: '펜션', type: '객실', amount: 320000, confirmed: true, counterparty: '에어비앤비' },
 ]
 
+const FIELDS = [
+  { key: 'date', label: '날짜', type: 'date' as const },
+  { key: 'biz', label: '사업 구분', type: 'select' as const, options: ['공방', '펜션', '기타'] },
+  { key: 'type', label: '수입 유형', type: 'select' as const, options: ['CNC가공', '레이저', '수업·강의', '장비대여', '객실', '공간대여'] },
+  { key: 'amount', label: '금액', type: 'number' as const, placeholder: '0' },
+  { key: 'counterparty', label: '거래처', type: 'text' as const, placeholder: '거래처명' },
+  { key: 'desc', label: '내용', type: 'text' as const, placeholder: '내용' },
+]
+
 export default function Income() {
-  const [showForm, setShowForm] = useState(false)
+  const [list, setList] = useState(INIT_LIST)
+  const [modal, setModal] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState<Record<string, string | number>>({})
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+
+  const openAdd = () => {
+    setEditId(null)
+    setForm({ date: '2026-03-10', biz: '공방', type: 'CNC가공', amount: 0, counterparty: '', desc: '' })
+    setModal(true)
+  }
+
+  const openEdit = (item: typeof INIT_LIST[0]) => {
+    setEditId(item.id)
+    setForm({ date: item.date, biz: item.biz, type: item.type, amount: item.amount, counterparty: item.counterparty, desc: item.desc })
+    setModal(true)
+  }
+
+  const save = () => {
+    if (editId) {
+      setList(prev => prev.map(i => i.id === editId ? { ...i, ...form, amount: Number(form.amount) } as typeof i : i))
+    } else {
+      setList(prev => [{ id: Date.now().toString(), ...form, amount: Number(form.amount), confirmed: false } as typeof INIT_LIST[0], ...prev])
+    }
+    setModal(false)
+  }
+
+  const confirmDelete = () => {
+    if (deleteId) setList(prev => prev.filter(i => i.id !== deleteId))
+    setDeleteId(null)
+  }
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">수입 관리</h2>
-        <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">
+        <button onClick={openAdd} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">
           <Plus size={16} /> 수입 등록
         </button>
       </div>
-
-      {showForm && (
-        <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-5">
-          <h3 className="text-sm font-semibold mb-4">수입 등록</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div>
-              <label className="text-[11px] text-[#8b8fa3] block mb-1">날짜</label>
-              <input type="date" defaultValue="2026-03-10" className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-white focus:border-[#2E7D32] outline-none" />
-            </div>
-            <div>
-              <label className="text-[11px] text-[#8b8fa3] block mb-1">사업 구분</label>
-              <select className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-white focus:border-[#2E7D32] outline-none">
-                <option>공방</option><option>펜션</option><option>기타</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] text-[#8b8fa3] block mb-1">수입 유형</label>
-              <select className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-white focus:border-[#2E7D32] outline-none">
-                <option>CNC가공</option><option>레이저</option><option>수업·강의</option><option>장비대여</option><option>객실</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] text-[#8b8fa3] block mb-1">금액</label>
-              <input type="number" placeholder="0" className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-white focus:border-[#2E7D32] outline-none" />
-            </div>
-            <div>
-              <label className="text-[11px] text-[#8b8fa3] block mb-1">거래처</label>
-              <input type="text" placeholder="거래처명" className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-white focus:border-[#2E7D32] outline-none" />
-            </div>
-            <div>
-              <label className="text-[11px] text-[#8b8fa3] block mb-1">메모</label>
-              <input type="text" placeholder="메모" className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-white focus:border-[#2E7D32] outline-none" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3 mt-4">
-            <label className="flex items-center gap-2 text-[12px] text-[#8b8fa3]">
-              <input type="checkbox" className="accent-[#2E7D32]" /> 세금계산서 발행
-            </label>
-            <label className="flex items-center gap-2 text-[12px] text-[#8b8fa3]">
-              <input type="checkbox" defaultChecked className="accent-[#2E7D32]" /> 입금 확인
-            </label>
-          </div>
-          <div className="flex gap-2 mt-4">
-            <button className="bg-[#2E7D32] text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50]">저장</button>
-            <button onClick={() => setShowForm(false)} className="border border-[#2a2d3a] text-[#8b8fa3] px-5 py-2 rounded-lg text-sm hover:text-white">취소</button>
-          </div>
-        </div>
-      )}
 
       {/* 차트 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -121,9 +114,11 @@ export default function Income() {
 
       {/* 수입 목록 */}
       <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
-        <h3 className="text-sm font-semibold mb-3 pb-2 border-b border-[#2a2d3a]">수입 내역</h3>
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#2a2d3a]">
+          <h3 className="text-sm font-semibold">수입 내역 <span className="text-[#8b8fa3] font-normal text-[11px]">({list.length}건)</span></h3>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-[12px] min-w-[600px]">
+          <table className="w-full text-[12px] min-w-[650px]">
             <thead>
               <tr className="border-b-2 border-[#2a2d3a]">
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">날짜</th>
@@ -132,25 +127,27 @@ export default function Income() {
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">거래처</th>
                 <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">금액</th>
                 <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">입금</th>
+                <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">관리</th>
               </tr>
             </thead>
             <tbody>
-              {incomeList.map(item => (
-                <tr key={item.id} className="border-b border-[#2a2d3a]/50 hover:bg-[#22252f] cursor-pointer">
+              {list.map(item => (
+                <tr key={item.id} className="border-b border-[#2a2d3a]/50 hover:bg-[#22252f]">
                   <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{item.date}</td>
                   <td className="py-2 px-2">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${item.biz === '공방' ? 'bg-[#2E7D32]/20 text-[#4CAF50]' : 'bg-[#3498db]/20 text-[#3498db]'}`}>
-                      {item.biz}
-                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${item.biz === '공방' ? 'bg-[#2E7D32]/20 text-[#4CAF50]' : 'bg-[#3498db]/20 text-[#3498db]'}`}>{item.biz}</span>
                   </td>
                   <td className="py-2 px-2">{item.desc}</td>
                   <td className="py-2 px-2 text-[#8b8fa3]">{item.counterparty}</td>
                   <td className="py-2 px-2 text-right text-[#4CAF50] tabular-nums font-medium">{krw(item.amount)}</td>
                   <td className="py-2 px-2 text-center">
-                    {item.confirmed
-                      ? <span className="text-[#4CAF50]">✓</span>
-                      : <span className="text-[#f1c40f]">미수</span>
-                    }
+                    {item.confirmed ? <span className="text-[#4CAF50]">✓</span> : <span className="text-[#f1c40f]">미수</span>}
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => openEdit(item)} className="p-1 text-[#8b8fa3] hover:text-[#3498db] transition-colors" title="수정"><Pencil size={13} /></button>
+                      <button onClick={() => setDeleteId(item.id)} className="p-1 text-[#8b8fa3] hover:text-[#e74c3c] transition-colors" title="삭제"><Trash2 size={13} /></button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -158,6 +155,9 @@ export default function Income() {
           </table>
         </div>
       </div>
+
+      <CrudModal open={modal} title={editId ? '수입 수정' : '수입 등록'} fields={FIELDS} values={form} onChange={(k, v) => setForm(p => ({ ...p, [k]: v }))} onSave={save} onClose={() => setModal(false)} />
+      <ConfirmDialog open={!!deleteId} message="이 수입 내역을 삭제하시겠습니까?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} />
     </div>
   )
 }

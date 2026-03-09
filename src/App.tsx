@@ -11,6 +11,7 @@ import Tax from './pages/Tax'
 import Yearly from './pages/Yearly'
 import Data from './pages/Data'
 import AiInsight from './pages/AiInsight'
+import Team from './pages/Team'
 
 const pages = {
   dashboard: Dashboard,
@@ -24,6 +25,7 @@ const pages = {
   yearly: Yearly,
   data: Data,
   ai: AiInsight,
+  team: Team,
 }
 
 export default function App() {

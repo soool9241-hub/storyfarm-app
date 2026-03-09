@@ -1,11 +1,24 @@
+import { useState } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { AlertTriangle, Calculator } from 'lucide-react'
+import { AlertTriangle, Calculator, Plus, Pencil, Trash2 } from 'lucide-react'
 import { krw } from '../lib/format'
+import CrudModal from '../components/CrudModal'
+import ConfirmDialog from '../components/ConfirmDialog'
 
-const debts = [
+const INIT_DEBTS = [
   { id: '1', name: 'OK저축은행', balance: 9050535, rate: 17.2, monthly: 721162, payDay: 9, dueDate: '2027-03-09', lastPaid: '2026-03-09', lastAmount: 721162, type: '대출' },
-  { id: '2', name: '카드론', balance: 3000000, rate: 19.5, monthly: 250000, payDay: 25, dueDate: null, lastPaid: null, lastAmount: null, type: '카드론' },
+  { id: '2', name: '카드론', balance: 3000000, rate: 19.5, monthly: 250000, payDay: 25, dueDate: '', lastPaid: '', lastAmount: 0, type: '카드론' },
   { id: '3', name: '국민은행 일시상환', balance: 10000000, rate: 4.5, monthly: 37500, payDay: 15, dueDate: '2026-09-15', lastPaid: '2026-03-15', lastAmount: 37500, type: '대출' },
+]
+
+const DEBT_FIELDS = [
+  { key: 'name', label: '채무명', type: 'text' as const, placeholder: '예: OK저축은행' },
+  { key: 'type', label: '유형', type: 'select' as const, options: ['대출', '카드론', '개인', '기타'] },
+  { key: 'balance', label: '잔액', type: 'number' as const, placeholder: '0' },
+  { key: 'rate', label: '연이율 (%)', type: 'number' as const, placeholder: '0' },
+  { key: 'monthly', label: '월 상환액', type: 'number' as const, placeholder: '0' },
+  { key: 'payDay', label: '납부일 (1~31)', type: 'number' as const, placeholder: '1' },
+  { key: 'dueDate', label: '만기일', type: 'date' as const },
 ]
 
 const simData = [
@@ -33,13 +46,31 @@ function dDayColor(dateStr: string | null): string {
 }
 
 export default function Debt() {
+  const [debts, setDebts] = useState(INIT_DEBTS)
+  const [modal, setModal] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState<Record<string, string | number>>({})
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+
+  const openAdd = () => { setEditId(null); setForm({ name: '', type: '대출', balance: 0, rate: 0, monthly: 0, payDay: 1, dueDate: '' }); setModal(true) }
+  const openEdit = (d: typeof INIT_DEBTS[0]) => { setEditId(d.id); setForm({ name: d.name, type: d.type, balance: d.balance, rate: d.rate, monthly: d.monthly, payDay: d.payDay, dueDate: d.dueDate || '' }); setModal(true) }
+  const save = () => {
+    if (editId) { setDebts(prev => prev.map(d => d.id === editId ? { ...d, ...form, balance: Number(form.balance), rate: Number(form.rate), monthly: Number(form.monthly), payDay: Number(form.payDay) } as typeof d : d)) }
+    else { setDebts(prev => [...prev, { id: Date.now().toString(), ...form, balance: Number(form.balance), rate: Number(form.rate), monthly: Number(form.monthly), payDay: Number(form.payDay), lastPaid: '', lastAmount: 0 } as typeof INIT_DEBTS[0]]) }
+    setModal(false)
+  }
+  const confirmDelete = () => { if (deleteId) setDebts(prev => prev.filter(d => d.id !== deleteId)); setDeleteId(null) }
+
   const totalDebt = debts.reduce((s, d) => s + d.balance, 0)
   const totalMonthly = debts.reduce((s, d) => s + d.monthly, 0)
   const totalInterest = debts.reduce((s, d) => s + Math.round(d.balance * d.rate / 100 / 12), 0)
 
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-bold">대출·채무 관리</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold">대출·채무 관리</h2>
+        <button onClick={openAdd} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50]"><Plus size={16} /> 채무 등록</button>
+      </div>
 
       {/* 요약 */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -68,7 +99,11 @@ export default function Debt() {
                   <h4 className="font-semibold text-sm">{d.name}</h4>
                   <span className="text-[10px] text-[#8b8fa3]">{d.type} · 연 {d.rate}%</span>
                 </div>
-                {d.rate >= 15 && <AlertTriangle size={16} className="text-[#e74c3c]" />}
+                <div className="flex items-center gap-1">
+                  {d.rate >= 15 && <AlertTriangle size={16} className="text-[#e74c3c]" />}
+                  <button onClick={() => openEdit(d)} className="p-1 text-[#8b8fa3] hover:text-[#3498db] transition-colors" title="수정"><Pencil size={13} /></button>
+                  <button onClick={() => setDeleteId(d.id)} className="p-1 text-[#8b8fa3] hover:text-[#e74c3c] transition-colors" title="삭제"><Trash2 size={13} /></button>
+                </div>
               </div>
               <div className="text-2xl font-bold text-[#e74c3c] mb-3 tabular-nums">{krw(d.balance)}</div>
               <div className="space-y-1.5 text-[12px]">
@@ -140,6 +175,8 @@ export default function Debt() {
           </ResponsiveContainer>
         </div>
       </div>
+      <CrudModal open={modal} title={editId ? '채무 수정' : '채무 등록'} fields={DEBT_FIELDS} values={form} onChange={(k, v) => setForm(p => ({ ...p, [k]: v }))} onSave={save} onClose={() => setModal(false)} />
+      <ConfirmDialog open={!!deleteId} message="이 채무를 삭제하시겠습니까?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} />
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { useStore, type TabId } from '../store/useStore'
 import {
   LayoutDashboard, TrendingUp, TrendingDown, CreditCard,
-  Target, Wallet, Wrench, FileText, BarChart3, Database, Bot, Menu, X
+  Target, Wallet, Wrench, FileText, BarChart3, Database, Bot, Users, Menu, X
 } from 'lucide-react'
 
 const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
@@ -16,6 +16,7 @@ const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'yearly', label: '연도별 분석', icon: <BarChart3 size={18} /> },
   { id: 'data', label: '데이터 관리', icon: <Database size={18} /> },
   { id: 'ai', label: 'AI 인사이트', icon: <Bot size={18} /> },
+  { id: 'team', label: 'AI 에이전트 팀', icon: <Users size={18} /> },
 ]
 
 export default function Sidebar() {
