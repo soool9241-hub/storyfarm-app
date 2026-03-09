@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+:root {
+  --farm-green: #2E7D32;
+  --farm-green-light: #4CAF50;
+}
+
+body {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0f1117;
+  color: #e4e6eb;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+html { overflow-x: hidden; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 3px; }

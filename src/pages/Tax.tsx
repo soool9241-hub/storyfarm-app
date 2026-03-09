@@ -1,0 +1,86 @@
+import { FileText, Calendar, Download } from 'lucide-react'
+import { krw } from '../lib/format'
+
+const taxCalendar = [
+  { date: '2026-01-25', desc: '부가세 신고·납부 (2기 확정)', status: 'done' },
+  { date: '2026-05-31', desc: '종합소득세 신고·납부', status: 'upcoming' },
+  { date: '2026-07-25', desc: '부가세 신고·납부 (1기 확정)', status: 'upcoming' },
+  { date: '2026-11-30', desc: '중간예납', status: 'upcoming' },
+]
+
+export default function Tax() {
+  return (
+    <div className="space-y-5">
+      <h2 className="text-lg font-bold">세무 관리</h2>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* 부가세 */}
+        <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
+          <h3 className="text-sm font-semibold mb-3 pb-2 border-b border-[#2a2d3a] flex items-center gap-2">
+            <FileText size={16} className="text-[#3498db]" /> 부가세 예상 (2026년 1기)
+          </h3>
+          <div className="space-y-2 text-[13px]">
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">매출세액 (1~6월 예상)</span><span>{krw(2790000)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">매입세액</span><span>{krw(1830000)}</span></div>
+            <div className="flex justify-between border-t border-[#2a2d3a] pt-2 font-bold">
+              <span>예상 납부액</span><span className="text-[#e74c3c]">{krw(960000)}</span>
+            </div>
+            <p className="text-[11px] text-[#8b8fa3] mt-2">* 세금계산서 미수취 건 3건 — 매입세액 공제 누락 가능</p>
+          </div>
+        </div>
+
+        {/* 종소세 */}
+        <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
+          <h3 className="text-sm font-semibold mb-3 pb-2 border-b border-[#2a2d3a] flex items-center gap-2">
+            <FileText size={16} className="text-[#9b59b6]" /> 종합소득세 예상
+          </h3>
+          <div className="space-y-2 text-[13px]">
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">사업소득 (연간 예상)</span><span>{krw(55800000)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">필요경비</span><span>{krw(49140000)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">과세표준</span><span>{krw(6660000)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">세율 구간</span><span>6% (1,400만 이하)</span></div>
+            <div className="flex justify-between border-t border-[#2a2d3a] pt-2 font-bold">
+              <span>예상 세액</span><span className="text-[#e74c3c]">{krw(399600)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 절세 항목 */}
+      <div className="bg-gradient-to-r from-[#2E7D32]/10 to-[#1a1d27] border border-[#2E7D32]/30 rounded-xl p-4">
+        <h3 className="text-sm font-semibold mb-2 text-[#4CAF50]">절세 항목 발굴</h3>
+        <div className="space-y-2 text-[12px]">
+          <div className="flex items-start gap-2"><span className="text-[#4CAF50]">•</span><span>노란우산공제 가입 시 연 300만원 소득공제 가능</span></div>
+          <div className="flex items-start gap-2"><span className="text-[#4CAF50]">•</span><span>업무용 차량 감가상각비 경비 처리 가능</span></div>
+          <div className="flex items-start gap-2"><span className="text-[#4CAF50]">•</span><span>교육훈련비 (CNC 교육) 세액공제 대상</span></div>
+          <div className="flex items-start gap-2"><span className="text-[#f1c40f]">!</span><span>국민카드 결제 중 세금계산서 미수취 3건 확인 필요</span></div>
+        </div>
+      </div>
+
+      {/* 세무 캘린더 */}
+      <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
+        <h3 className="text-sm font-semibold mb-3 pb-2 border-b border-[#2a2d3a] flex items-center gap-2">
+          <Calendar size={16} /> 세무 캘린더
+        </h3>
+        <div className="space-y-2">
+          {taxCalendar.map((t, i) => (
+            <div key={i} className="flex items-center justify-between py-2 border-b border-[#2a2d3a]/50 last:border-0 text-[12px]">
+              <div className="flex items-center gap-3">
+                <span className={`w-2 h-2 rounded-full ${t.status === 'done' ? 'bg-[#4CAF50]' : 'bg-[#f1c40f]'}`} />
+                <span className="text-[#8b8fa3] tabular-nums">{t.date}</span>
+                <span>{t.desc}</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${t.status === 'done' ? 'bg-[#4CAF50]/20 text-[#4CAF50]' : 'bg-[#f1c40f]/20 text-[#f1c40f]'}`}>
+                {t.status === 'done' ? '완료' : '예정'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button className="flex items-center gap-2 bg-[#2E7D32] text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-[#4CAF50]">
+        <Download size={16} /> 세무사 제출 패키지 다운로드
+      </button>
+    </div>
+  )
+}
