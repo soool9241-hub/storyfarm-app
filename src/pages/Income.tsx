@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import HometaxImport from '../components/HometaxImport'
 import { krw } from '../lib/format'
 import { supabase } from '../lib/supabase'
@@ -177,6 +178,79 @@ export default function Income() {
     setList(prev => [...newItems, ...prev])
   }
 
+  // CSV 업로드
+  const csvRef = useRef<HTMLInputElement>(null)
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' })
+        const imported: IncomeItem[] = rows.map(row => {
+          const vals = Object.values(row).map(v => String(v ?? '').trim())
+          const keys = Object.keys(row).map(k => String(k).trim())
+          const kv = Object.fromEntries(keys.map((k, i) => [k, vals[i]]))
+          return {
+            id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+            date: kv['날짜'] || kv['date'] || vals[0] || '',
+            biz: kv['사업구분'] || kv['biz'] || vals[1] || '공방',
+            type: kv['유형'] || kv['type'] || vals[2] || '기타',
+            amount: Math.round(Number(String(kv['금액'] || kv['amount'] || vals[3] || '0').replace(/[^\d.-]/g, ''))) || 0,
+            counterparty: kv['거래처'] || kv['counterparty'] || vals[4] || '',
+            desc: kv['내용'] || kv['desc'] || vals[5] || '',
+            confirmed: false,
+          }
+        }).filter(i => i.date && i.amount > 0)
+        if (imported.length > 0) {
+          setList(prev => [...imported, ...prev])
+          alert(`${imported.length}건 가져왔습니다.`)
+        } else {
+          alert('파싱 가능한 데이터가 없습니다.\n컬럼: 날짜, 사업구분, 유형, 금액, 거래처, 내용')
+        }
+      } catch {
+        alert('파일 읽기 오류')
+      }
+    }
+    reader.readAsArrayBuffer(file)
+    e.target.value = ''
+  }
+
+  // 엑셀/CSV 내보내기
+  const handleExport = (format: 'xlsx' | 'csv') => {
+    const exportData = list.map(i => ({
+      '날짜': i.date,
+      '사업구분': i.biz,
+      '유형': i.type,
+      '금액': i.amount,
+      '거래처': i.counterparty,
+      '내용': i.desc,
+      '입금확인': i.confirmed ? 'Y' : 'N',
+    }))
+    // 펜션 매출도 포함
+    pensionRevenue.filter(r => r.status !== 'cancelled').forEach(r => {
+      exportData.push({
+        '날짜': r.reservation_date,
+        '사업구분': '펜션',
+        '유형': '객실',
+        '금액': r.total_revenue,
+        '거래처': r.guest_name || '-',
+        '내용': `${r.guest_count}명 ${r.stay_nights}박`,
+        '입금확인': r.status === 'confirmed' ? 'Y' : 'N',
+      })
+    })
+    exportData.sort((a, b) => b['날짜'].localeCompare(a['날짜']))
+
+    const ws = XLSX.utils.json_to_sheet(exportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '수입내역')
+    const filename = `스토리팜_수입내역_${new Date().toISOString().slice(0, 10)}.${format}`
+    XLSX.writeFile(wb, filename)
+  }
+
   // 차트 데이터 계산
   const pensionTotal = pensionRevenue
     .filter(r => r.status !== 'cancelled')
@@ -201,9 +275,16 @@ export default function Income() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">수입 관리</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <input ref={csvRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCsvUpload} />
           <button onClick={() => setHometaxOpen(true)} className="flex items-center gap-1.5 bg-[#3498db] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#2980b9] transition-colors">
             <FileSpreadsheet size={16} /> 홈택스
+          </button>
+          <button onClick={() => csvRef.current?.click()} className="flex items-center gap-1.5 bg-[#e67e22] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#d35400] transition-colors">
+            <Upload size={16} /> CSV
+          </button>
+          <button onClick={() => handleExport('xlsx')} className="flex items-center gap-1.5 bg-[#9b59b6] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#8e44ad] transition-colors">
+            <Download size={16} /> 내보내기
           </button>
           <button onClick={openAdd} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">
             <Plus size={16} /> 수입 등록
