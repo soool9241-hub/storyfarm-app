@@ -28,7 +28,7 @@ const ASSET_FIELDS = [
 const MAINT_FIELDS = [
   { key: 'date', label: '날짜', type: 'date' as const },
   { key: 'asset', label: '장비', type: 'text' as const, placeholder: '장비명' },
-  { key: 'desc', label: '내용', type: 'text' as const, placeholder: '내용' },
+  { key: 'desc', label: '내용', type: 'textarea' as const, placeholder: '내용을 입력하세요' },
   { key: 'cost', label: '비용', type: 'number' as const, placeholder: '0' },
   { key: 'vendor', label: '업체', type: 'text' as const, placeholder: '업체명' },
 ]

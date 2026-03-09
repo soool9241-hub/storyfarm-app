@@ -1,9 +1,10 @@
-import { X } from 'lucide-react'
+import { X, CalendarDays } from 'lucide-react'
+import { useRef } from 'react'
 
 interface Field {
   key: string
   label: string
-  type?: 'text' | 'number' | 'date' | 'select'
+  type?: 'text' | 'number' | 'date' | 'select' | 'textarea'
   options?: string[]
   placeholder?: string
 }
@@ -41,6 +42,16 @@ export default function CrudModal({ open, title, fields, values, onChange, onSav
                   <option value="">선택</option>
                   {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
+              ) : f.type === 'date' ? (
+                <DateField value={String(values[f.key] ?? '')} onChange={v => onChange(f.key, v)} />
+              ) : f.type === 'textarea' ? (
+                <textarea
+                  value={values[f.key] ?? ''}
+                  onChange={e => onChange(f.key, e.target.value)}
+                  placeholder={f.placeholder}
+                  rows={3}
+                  className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-[#2E7D32] resize-none"
+                />
               ) : (
                 <input
                   type={f.type || 'text'}
@@ -58,6 +69,29 @@ export default function CrudModal({ open, title, fields, values, onChange, onSav
           <button onClick={onSave} className="flex-1 bg-[#2E7D32] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">저장</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function DateField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="date"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-[#2E7D32] [color-scheme:dark] cursor-pointer"
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.showPicker()}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8b8fa3] hover:text-[#4CAF50] transition-colors"
+      >
+        <CalendarDays size={16} />
+      </button>
     </div>
   )
 }

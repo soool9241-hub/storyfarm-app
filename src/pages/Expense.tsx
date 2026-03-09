@@ -27,7 +27,7 @@ const FIELDS = [
   { key: 'category', label: '카테고리', type: 'select' as const, options: ['재료비', '인건비', '임대료', '공과금', '장비', '마케팅', '세금', '식대·교통', '대출상환', '운영비', '기타'] },
   { key: 'amount', label: '금액', type: 'number' as const, placeholder: '0' },
   { key: 'method', label: '결제수단', type: 'select' as const, options: ['국민카드', '신한카드', '계좌이체', '현금'] },
-  { key: 'desc', label: '내용', type: 'text' as const, placeholder: '내용' },
+  { key: 'desc', label: '내용', type: 'textarea' as const, placeholder: '내용을 입력하세요' },
   { key: 'biz', label: '사업 구분', type: 'select' as const, options: ['공방', '펜션', '개인', '공통'] },
 ]
 

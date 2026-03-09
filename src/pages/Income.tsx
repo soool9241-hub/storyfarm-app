@@ -33,7 +33,7 @@ const FIELDS = [
   { key: 'type', label: '수입 유형', type: 'select' as const, options: ['CNC가공', '레이저', '수업·강의', '장비대여', '객실', '공간대여'] },
   { key: 'amount', label: '금액', type: 'number' as const, placeholder: '0' },
   { key: 'counterparty', label: '거래처', type: 'text' as const, placeholder: '거래처명' },
-  { key: 'desc', label: '내용', type: 'text' as const, placeholder: '내용' },
+  { key: 'desc', label: '내용', type: 'textarea' as const, placeholder: '내용을 입력하세요' },
 ]
 
 export default function Income() {
