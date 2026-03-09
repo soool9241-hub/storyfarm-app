@@ -1,30 +1,49 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database } from 'lucide-react'
 import { krw } from '../lib/format'
+import { supabase } from '../lib/supabase'
 import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
 
-const channelData = [
-  { name: 'CNC 가공', value: 2500000, color: '#2E7D32' },
-  { name: '레이저', value: 500000, color: '#4CAF50' },
-  { name: '수업·강의', value: 350000, color: '#3498db' },
-  { name: '장비 대여', value: 500000, color: '#f1c40f' },
-  { name: '펜션 객실', value: 800000, color: '#9b59b6' },
-]
+interface ReservationRevenue {
+  id: number
+  guest_name: string
+  reservation_date: string
+  checkout_date: string
+  stay_nights: number
+  guest_count: number
+  status: string
+  base_fee: number
+  extra_guest_fee: number
+  bbq_fee: number
+  dinner_fee: number
+  bus_fee: number
+  total_revenue: number
+  bbq_count: number
+  dinner_count: number
+  bus_requested: boolean
+  program_type: string
+}
 
-const monthlyData = [
-  { month: '1월', 공방: 2900000, 펜션: 400000 },
-  { month: '2월', 공방: 3500000, 펜션: 500000 },
-  { month: '3월', 공방: 3850000, 펜션: 800000 },
-]
+interface MonthlyRevenue {
+  reservation_year: number
+  reservation_month: number
+  reservation_count: number
+  total_guests: number
+  total_base_fee: number
+  total_extra_guest_fee: number
+  total_bbq_fee: number
+  total_dinner_fee: number
+  total_bus_fee: number
+  total_revenue: number
+}
 
 const INIT_LIST = [
   { id: '1', date: '2026-03-22', desc: 'SUS304 정밀부품 100EA', biz: '공방', type: 'CNC가공', amount: 5000000, confirmed: false, counterparty: '삼성전자 협력사' },
   { id: '2', date: '2026-03-12', desc: 'MDF 레이저커팅 간판', biz: '공방', type: '레이저', amount: 500000, confirmed: true, counterparty: '로컬카페' },
   { id: '3', date: '2026-03-07', desc: 'SUS304 브라켓 30EA', biz: '공방', type: 'CNC가공', amount: 1800000, confirmed: true, counterparty: '현대모비스' },
   { id: '4', date: '2026-03-03', desc: 'AL6061 정밀가공 50EA', biz: '공방', type: 'CNC가공', amount: 2500000, confirmed: true, counterparty: '(주)테크원' },
-  { id: '5', date: '2026-03-01', desc: '달팽이아지트 객실 2박', biz: '펜션', type: '객실', amount: 320000, confirmed: true, counterparty: '에어비앤비' },
 ]
 
 const FIELDS = [
@@ -43,9 +62,67 @@ export default function Income() {
   const [form, setForm] = useState<Record<string, string | number>>({})
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
+  // Supabase 펜션 매출 데이터
+  const [pensionRevenue, setPensionRevenue] = useState<ReservationRevenue[]>([])
+  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([])
+  const [loading, setLoading] = useState(false)
+  const [sbError, setSbError] = useState<string | null>(null)
+
+  const fetchPensionData = async () => {
+    setLoading(true)
+    setSbError(null)
+    try {
+      const [revRes, monthRes] = await Promise.all([
+        supabase.from('v_reservation_revenue').select('*').order('reservation_date', { ascending: false }),
+        supabase.from('v_monthly_revenue').select('*').order('reservation_year', { ascending: false }),
+      ])
+
+      if (revRes.error) throw revRes.error
+      if (monthRes.error) throw monthRes.error
+
+      setPensionRevenue(revRes.data || [])
+      setMonthlyRevenue(monthRes.data || [])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setSbError(msg)
+      // 뷰가 아직 없으면 reservations 테이블 직접 시도
+      try {
+        const { data, error } = await supabase.from('reservations').select('*').order('reservation_date', { ascending: false })
+        if (!error && data && data.length > 0) {
+          // 클라이언트에서 매출 계산
+          const calculated = data.map((r: Record<string, unknown>) => ({
+            id: r.id as number,
+            guest_name: (r.guest_name || '') as string,
+            reservation_date: (r.reservation_date || '') as string,
+            checkout_date: (r.checkout_date || '') as string,
+            stay_nights: (r.stay_nights || 1) as number,
+            guest_count: (r.guest_count || 0) as number,
+            status: (r.status || '') as string,
+            bbq_count: (r.bbq_count || 0) as number,
+            dinner_count: (r.dinner_count || 0) as number,
+            bus_requested: (r.bus_requested || false) as boolean,
+            bus_fee: ((r as Record<string, unknown>).bus_fee || 0) as number,
+            program_type: (r.program_type || '') as string,
+            base_fee: 700000 * ((r.stay_nights || 1) as number),
+            extra_guest_fee: Math.max(((r.guest_count || 0) as number) - 15, 0) * 10000 * ((r.stay_nights || 1) as number),
+            bbq_fee: ((r.bbq_count || 0) as number) * 30000,
+            dinner_fee: ((r.dinner_count || 0) as number) * 10000,
+            total_revenue: 0,
+          }))
+          calculated.forEach(c => { c.total_revenue = c.base_fee + c.extra_guest_fee + c.bbq_fee + c.dinner_fee + c.bus_fee })
+          setPensionRevenue(calculated)
+          setSbError(null)
+        }
+      } catch { /* fallback failed */ }
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchPensionData() }, [])
+
   const openAdd = () => {
     setEditId(null)
-    setForm({ date: '2026-03-10', biz: '공방', type: 'CNC가공', amount: 0, counterparty: '', desc: '' })
+    setForm({ date: new Date().toISOString().slice(0, 10), biz: '공방', type: 'CNC가공', amount: 0, counterparty: '', desc: '' })
     setModal(true)
   }
 
@@ -69,6 +146,26 @@ export default function Income() {
     setDeleteId(null)
   }
 
+  // 차트 데이터 계산
+  const pensionTotal = pensionRevenue
+    .filter(r => r.status !== 'cancelled')
+    .reduce((s, r) => s + r.total_revenue, 0)
+  const workshopTotal = list.reduce((s, i) => s + i.amount, 0)
+
+  const channelData = [
+    { name: 'CNC 가공', value: list.filter(i => i.type === 'CNC가공').reduce((s, i) => s + i.amount, 0), color: '#2E7D32' },
+    { name: '레이저', value: list.filter(i => i.type === '레이저').reduce((s, i) => s + i.amount, 0), color: '#4CAF50' },
+    { name: '펜션 매출', value: pensionTotal, color: '#9b59b6' },
+    ...(list.filter(i => !['CNC가공', '레이저'].includes(i.type)).length > 0
+      ? [{ name: '기타', value: list.filter(i => !['CNC가공', '레이저'].includes(i.type)).reduce((s, i) => s + i.amount, 0), color: '#f1c40f' }]
+      : []),
+  ].filter(d => d.value > 0)
+
+  const monthlyData = monthlyRevenue.slice(0, 6).reverse().map(m => ({
+    month: `${m.reservation_month}월`,
+    펜션: m.total_revenue,
+  }))
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -76,6 +173,24 @@ export default function Income() {
         <button onClick={openAdd} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">
           <Plus size={16} /> 수입 등록
         </button>
+      </div>
+
+      {/* 총 매출 요약 */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 text-center">
+          <div className="text-[11px] text-[#8b8fa3] mb-1">공방 매출</div>
+          <div className="text-xl font-bold text-[#4CAF50]">{krw(workshopTotal)}</div>
+        </div>
+        <div className="bg-[#1a1d27] border border-[#9b59b6]/30 rounded-xl p-4 text-center">
+          <div className="text-[11px] text-[#8b8fa3] mb-1 flex items-center justify-center gap-1">
+            <Database size={11} className="text-[#9b59b6]" /> 펜션 매출 (Supabase)
+          </div>
+          <div className="text-xl font-bold text-[#9b59b6]">{krw(pensionTotal)}</div>
+        </div>
+        <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 text-center">
+          <div className="text-[11px] text-[#8b8fa3] mb-1">총 매출</div>
+          <div className="text-xl font-bold text-white">{krw(workshopTotal + pensionTotal)}</div>
+        </div>
       </div>
 
       {/* 차트 */}
@@ -94,28 +209,105 @@ export default function Income() {
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
-          <h3 className="text-sm font-semibold mb-3 pb-2 border-b border-[#2a2d3a]">월별 매출 비교</h3>
-          <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
-                <XAxis dataKey="month" tick={{ fill: '#8b8fa3', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#8b8fa3', fontSize: 11 }} tickFormatter={(v) => `${(v/10000).toFixed(0)}만`} />
-                <Tooltip contentStyle={{ background: '#1a1d27', border: '1px solid #2a2d3a', borderRadius: 8, fontSize: 12 }} formatter={(v) => krw(Number(v))} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="공방" fill="#2E7D32" radius={[4,4,0,0]} />
-                <Bar dataKey="펜션" fill="#3498db" radius={[4,4,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        {monthlyData.length > 0 && (
+          <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
+            <h3 className="text-sm font-semibold mb-3 pb-2 border-b border-[#2a2d3a]">펜션 월별 매출</h3>
+            <div className="h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3a" />
+                  <XAxis dataKey="month" tick={{ fill: '#8b8fa3', fontSize: 11 }} />
+                  <YAxis tick={{ fill: '#8b8fa3', fontSize: 11 }} tickFormatter={(v) => `${(v/10000).toFixed(0)}만`} />
+                  <Tooltip contentStyle={{ background: '#1a1d27', border: '1px solid #2a2d3a', borderRadius: 8, fontSize: 12 }} formatter={(v) => krw(Number(v))} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="펜션" fill="#9b59b6" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* 수입 목록 */}
+      {/* 펜션 예약 매출 (Supabase) */}
+      <div className="bg-[#1a1d27] border border-[#9b59b6]/30 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#2a2d3a]">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Database size={14} className="text-[#9b59b6]" />
+            달팽이아지트 펜션 매출
+            <span className="text-[#8b8fa3] font-normal text-[11px]">({pensionRevenue.filter(r => r.status !== 'cancelled').length}건)</span>
+          </h3>
+          <button onClick={fetchPensionData} disabled={loading} className="flex items-center gap-1 text-[11px] text-[#8b8fa3] hover:text-[#9b59b6] transition-colors disabled:opacity-50">
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 새로고침
+          </button>
+        </div>
+
+        {sbError && (
+          <div className="text-[11px] text-[#f1c40f] bg-[#f1c40f]/10 rounded-lg p-2 mb-3">
+            Supabase: {sbError} — SQL을 먼저 실행해주세요
+          </div>
+        )}
+
+        {pensionRevenue.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px] min-w-[700px]">
+              <thead>
+                <tr className="border-b-2 border-[#2a2d3a]">
+                  <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">예약일</th>
+                  <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">고객명</th>
+                  <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">인원</th>
+                  <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">박수</th>
+                  <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">기본</th>
+                  <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">추가인원</th>
+                  <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">BBQ</th>
+                  <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">식사</th>
+                  <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">버스</th>
+                  <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">합계</th>
+                  <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pensionRevenue.map(r => (
+                  <tr key={r.id} className={`border-b border-[#2a2d3a]/50 hover:bg-[#22252f] ${r.status === 'cancelled' ? 'opacity-40 line-through' : ''}`}>
+                    <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{r.reservation_date}</td>
+                    <td className="py-2 px-2">{r.guest_name || '-'}</td>
+                    <td className="py-2 px-2 text-center">{r.guest_count}명</td>
+                    <td className="py-2 px-2 text-center">{r.stay_nights}박</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{krw(r.base_fee)}</td>
+                    <td className="py-2 px-2 text-right tabular-nums text-[#e67e22]">{r.extra_guest_fee > 0 ? krw(r.extra_guest_fee) : '-'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{r.bbq_fee > 0 ? krw(r.bbq_fee) : '-'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{r.dinner_fee > 0 ? krw(r.dinner_fee) : '-'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums">{r.bus_fee > 0 ? krw(r.bus_fee) : '-'}</td>
+                    <td className="py-2 px-2 text-right tabular-nums font-medium text-[#9b59b6]">{krw(r.total_revenue)}</td>
+                    <td className="py-2 px-2 text-center">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                        r.status === 'confirmed' ? 'bg-[#4CAF50]/20 text-[#4CAF50]' :
+                        r.status === 'cancelled' ? 'bg-[#e74c3c]/20 text-[#e74c3c]' :
+                        'bg-[#f1c40f]/20 text-[#f1c40f]'
+                      }`}>{r.status === 'confirmed' ? '확정' : r.status === 'cancelled' ? '취소' : r.status || '대기'}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : !loading && !sbError ? (
+          <div className="text-center py-8 text-[#8b8fa3] text-[12px]">
+            <Database size={24} className="mx-auto mb-2 opacity-30" />
+            <p>예약 데이터가 없습니다</p>
+            <p className="text-[10px] mt-1">Supabase에 예약이 등록되면 자동으로 매출이 계산됩니다</p>
+          </div>
+        ) : loading ? (
+          <div className="text-center py-8 text-[#8b8fa3] text-[12px]">
+            <RefreshCw size={20} className="mx-auto mb-2 animate-spin opacity-50" />
+            불러오는 중...
+          </div>
+        ) : null}
+      </div>
+
+      {/* 공방 수입 목록 */}
       <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#2a2d3a]">
-          <h3 className="text-sm font-semibold">수입 내역 <span className="text-[#8b8fa3] font-normal text-[11px]">({list.length}건)</span></h3>
+          <h3 className="text-sm font-semibold">공방 수입 내역 <span className="text-[#8b8fa3] font-normal text-[11px]">({list.length}건)</span></h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] min-w-[650px]">
@@ -135,7 +327,7 @@ export default function Income() {
                 <tr key={item.id} className="border-b border-[#2a2d3a]/50 hover:bg-[#22252f]">
                   <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{item.date}</td>
                   <td className="py-2 px-2">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${item.biz === '공방' ? 'bg-[#2E7D32]/20 text-[#4CAF50]' : 'bg-[#3498db]/20 text-[#3498db]'}`}>{item.biz}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2E7D32]/20 text-[#4CAF50]">{item.biz}</span>
                   </td>
                   <td className="py-2 px-2">{item.desc}</td>
                   <td className="py-2 px-2 text-[#8b8fa3]">{item.counterparty}</td>
