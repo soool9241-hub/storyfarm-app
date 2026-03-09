@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock } from 'lucide-react'
 import { krw } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import CrudModal from '../components/CrudModal'
@@ -39,12 +39,22 @@ interface MonthlyRevenue {
   total_revenue: number
 }
 
-const INIT_LIST = [
+const DEFAULT_LIST = [
   { id: '1', date: '2026-03-22', desc: 'SUS304 정밀부품 100EA', biz: '공방', type: 'CNC가공', amount: 5000000, confirmed: false, counterparty: '삼성전자 협력사' },
   { id: '2', date: '2026-03-12', desc: 'MDF 레이저커팅 간판', biz: '공방', type: '레이저', amount: 500000, confirmed: true, counterparty: '로컬카페' },
   { id: '3', date: '2026-03-07', desc: 'SUS304 브라켓 30EA', biz: '공방', type: 'CNC가공', amount: 1800000, confirmed: true, counterparty: '현대모비스' },
   { id: '4', date: '2026-03-03', desc: 'AL6061 정밀가공 50EA', biz: '공방', type: 'CNC가공', amount: 2500000, confirmed: true, counterparty: '(주)테크원' },
 ]
+
+type IncomeItem = typeof DEFAULT_LIST[number]
+
+function loadSavedList(): IncomeItem[] {
+  try {
+    const saved = localStorage.getItem('storyfarm_income_list')
+    if (saved) return JSON.parse(saved) as IncomeItem[]
+  } catch { /* ignore */ }
+  return DEFAULT_LIST
+}
 
 const FIELDS = [
   { key: 'date', label: '날짜', type: 'date' as const },
@@ -56,7 +66,7 @@ const FIELDS = [
 ]
 
 export default function Income() {
-  const [list, setList] = useState(INIT_LIST)
+  const [list, setList] = useState(loadSavedList)
   const [modal, setModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<Record<string, string | number>>({})
@@ -67,6 +77,11 @@ export default function Income() {
   const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([])
   const [loading, setLoading] = useState(false)
   const [sbError, setSbError] = useState<string | null>(null)
+
+  // 수기 등록 데이터 localStorage 저장
+  useEffect(() => {
+    localStorage.setItem('storyfarm_income_list', JSON.stringify(list))
+  }, [list])
 
   const fetchPensionData = async () => {
     setLoading(true)
@@ -126,7 +141,7 @@ export default function Income() {
     setModal(true)
   }
 
-  const openEdit = (item: typeof INIT_LIST[0]) => {
+  const openEdit = (item: typeof DEFAULT_LIST[0]) => {
     setEditId(item.id)
     setForm({ date: item.date, biz: item.biz, type: item.type, amount: item.amount, counterparty: item.counterparty, desc: item.desc })
     setModal(true)
@@ -136,7 +151,7 @@ export default function Income() {
     if (editId) {
       setList(prev => prev.map(i => i.id === editId ? { ...i, ...form, amount: Number(form.amount) } as typeof i : i))
     } else {
-      setList(prev => [{ id: Date.now().toString(), ...form, amount: Number(form.amount), confirmed: false } as typeof INIT_LIST[0], ...prev])
+      setList(prev => [{ id: Date.now().toString(), ...form, amount: Number(form.amount), confirmed: false } as typeof DEFAULT_LIST[0], ...prev])
     }
     setModal(false)
   }
@@ -235,6 +250,7 @@ export default function Income() {
             <Database size={14} className="text-[#9b59b6]" />
             달팽이아지트 펜션 매출
             <span className="text-[#8b8fa3] font-normal text-[11px]">({pensionRevenue.filter(r => r.status !== 'cancelled').length}건)</span>
+            <span className="flex items-center gap-0.5 text-[10px] text-[#8b8fa3] font-normal ml-2"><Lock size={10} /> 읽기전용</span>
           </h3>
           <button onClick={fetchPensionData} disabled={loading} className="flex items-center gap-1 text-[11px] text-[#8b8fa3] hover:text-[#9b59b6] transition-colors disabled:opacity-50">
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 새로고침
