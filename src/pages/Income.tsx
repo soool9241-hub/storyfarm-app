@@ -30,7 +30,7 @@ const INIT_LIST = [
 const FIELDS = [
   { key: 'date', label: '날짜', type: 'date' as const },
   { key: 'biz', label: '사업 구분', type: 'select' as const, options: ['공방', '펜션', '기타'] },
-  { key: 'type', label: '수입 유형', type: 'select' as const, options: ['CNC가공', '레이저', '수업·강의', '장비대여', '객실', '공간대여'] },
+  { key: 'type', label: '수입 유형', type: 'selectOrText' as const, options: ['CNC가공', '레이저', '수업·강의', '장비대여', '객실', '공간대여'] },
   { key: 'amount', label: '금액', type: 'number' as const, placeholder: '0' },
   { key: 'counterparty', label: '거래처', type: 'text' as const, placeholder: '거래처명' },
   { key: 'desc', label: '내용', type: 'textarea' as const, placeholder: '내용을 입력하세요' },

@@ -1,10 +1,10 @@
 import { X, CalendarDays } from 'lucide-react'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 interface Field {
   key: string
   label: string
-  type?: 'text' | 'number' | 'date' | 'select' | 'textarea'
+  type?: 'text' | 'number' | 'date' | 'select' | 'selectOrText' | 'textarea'
   options?: string[]
   placeholder?: string
 }
@@ -42,6 +42,8 @@ export default function CrudModal({ open, title, fields, values, onChange, onSav
                   <option value="">선택</option>
                   {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
+              ) : f.type === 'selectOrText' ? (
+                <SelectOrText value={String(values[f.key] ?? '')} options={f.options || []} onChange={v => onChange(f.key, v)} placeholder={f.placeholder} />
               ) : f.type === 'date' ? (
                 <DateField value={String(values[f.key] ?? '')} onChange={v => onChange(f.key, v)} />
               ) : f.type === 'textarea' ? (
@@ -69,6 +71,36 @@ export default function CrudModal({ open, title, fields, values, onChange, onSav
           <button onClick={onSave} className="flex-1 bg-[#2E7D32] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-[#4CAF50] transition-colors">저장</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function SelectOrText({ value, options, onChange, placeholder }: { value: string; options: string[]; onChange: (v: string) => void; placeholder?: string }) {
+  const [custom, setCustom] = useState(!options.includes(value) && value !== '')
+  const inputClass = "w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-[#2E7D32]"
+
+  if (custom) {
+    return (
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder || '직접 입력'}
+          className={inputClass + ' flex-1'}
+        />
+        <button type="button" onClick={() => { setCustom(false); onChange('') }} className="text-[10px] text-[#8b8fa3] hover:text-white border border-[#2a2d3a] rounded-lg px-2 shrink-0">목록</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-2">
+      <select value={value} onChange={e => { if (e.target.value === '__custom__') { setCustom(true); onChange('') } else onChange(e.target.value) }} className={inputClass + ' flex-1'}>
+        <option value="">선택</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="__custom__">직접 작성</option>
+      </select>
     </div>
   )
 }
