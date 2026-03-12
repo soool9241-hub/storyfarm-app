@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { AlertTriangle, Calculator, Plus, Pencil, Trash2, Upload, Download } from 'lucide-react'
+import { AlertTriangle, Calculator, Plus, Pencil, Trash2, Upload, Download, Camera, Loader2, Image, X } from 'lucide-react'
 import { krw } from '../lib/format'
 import * as XLSX from 'xlsx'
 import CrudModal from '../components/CrudModal'
@@ -75,6 +75,12 @@ export default function Debt() {
   const [form, setForm] = useState<Record<string, string | number>>({})
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const scanRef = useRef<HTMLInputElement>(null)
+  const [scanModal, setScanModal] = useState(false)
+  const [scanPreview, setScanPreview] = useState<string | null>(null)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [scanResult, setScanResult] = useState<Record<string, string | number> | null>(null)
+  const [scanError, setScanError] = useState('')
 
   // localStorage 저장
   useEffect(() => {
@@ -106,6 +112,97 @@ export default function Debt() {
     setModal(false)
   }
   const confirmDelete = () => { if (deleteId) setDebts(prev => prev.filter(d => d.id !== deleteId)); setDeleteId(null) }
+
+  // 사진 OCR 스캔
+  const handleScanPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      const dataUrl = evt.target?.result as string
+      setScanPreview(dataUrl)
+      setScanModal(true)
+      setScanResult(null)
+      setScanError('')
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  const runOcr = async () => {
+    if (!scanPreview) return
+    const apiKey = localStorage.getItem('claude_api_key')
+    if (!apiKey) {
+      setScanError('Claude API 키가 필요합니다. AI 인사이트 탭에서 API 키를 먼저 설정해주세요.')
+      return
+    }
+    setScanLoading(true)
+    setScanError('')
+    try {
+      const base64 = scanPreview.split(',')[1]
+      const mediaType = scanPreview.match(/data:(.*?);/)?.[1] || 'image/jpeg'
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+              { type: 'text', text: `이 이미지에서 대출/채무 관련 정보를 추출해주세요. 반드시 아래 JSON 형식으로만 응답하세요. 값을 찾을 수 없으면 빈 문자열이나 0으로 넣어주세요.
+
+{"name":"채무명/대출기관명","type":"대출/카드론/개인/기타","totalLoan":총대출금(숫자만),"rate":연이율(숫자만),"paidAmount":상환금액(숫자만),"monthly":월상환액(숫자만),"payDay":납부일(숫자만),"dueDate":"만기일(YYYY-MM-DD)"}
+
+JSON만 응답하세요. 다른 텍스트 없이.` }
+            ]
+          }]
+        })
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error?.message || `API 오류 (${res.status})`)
+      }
+      const data = await res.json()
+      const text = data.content?.[0]?.text || ''
+      // JSON 추출
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('인식 결과에서 데이터를 추출할 수 없습니다.')
+      const parsed = JSON.parse(jsonMatch[0])
+      const totalLoan = Number(String(parsed.totalLoan).replace(/[^\d]/g, '')) || 0
+      const paidAmount = Number(String(parsed.paidAmount).replace(/[^\d]/g, '')) || 0
+      setScanResult({
+        name: parsed.name || '',
+        type: parsed.type || '대출',
+        totalLoan,
+        rate: Number(parsed.rate) || 0,
+        paidAmount,
+        balance: Math.max(0, totalLoan - paidAmount),
+        monthly: Number(String(parsed.monthly).replace(/[^\d]/g, '')) || 0,
+        payDay: Number(parsed.payDay) || 1,
+        dueDate: parsed.dueDate || '',
+      })
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : '인식 오류')
+    }
+    setScanLoading(false)
+  }
+
+  const applyScanResult = () => {
+    if (!scanResult) return
+    setEditId(null)
+    setForm(scanResult)
+    setScanModal(false)
+    setScanPreview(null)
+    setScanResult(null)
+    setModal(true)
+  }
 
   // 엑셀 업로드
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -195,10 +292,14 @@ export default function Debt() {
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-bold">대출·채무 관리</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileUpload} />
+          <input ref={scanRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanPhoto} />
+          <button onClick={() => scanRef.current?.click()} className="flex items-center gap-1.5 bg-[#3498db] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#2980b9] transition-colors">
+            <Camera size={16} /> 사진 인식
+          </button>
           <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 bg-[#e67e22] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#d35400] transition-colors">
-            <Upload size={16} /> 엑셀 업로드
+            <Upload size={16} /> 엑셀
           </button>
           <button onClick={handleExport} className="flex items-center gap-1.5 bg-[#9b59b6] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#8e44ad] transition-colors">
             <Download size={16} /> 내보내기
@@ -352,6 +453,58 @@ export default function Debt() {
           </ResponsiveContainer>
         </div>
       </div>
+      {/* 사진 OCR 스캔 모달 */}
+      {scanModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-[#2a2d3a]">
+              <h3 className="text-sm font-semibold flex items-center gap-2"><Image size={16} className="text-[#3498db]" /> 대출 서류 인식</h3>
+              <button onClick={() => { setScanModal(false); setScanPreview(null); setScanResult(null); setScanError('') }} className="text-[#8b8fa3] hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {scanPreview && <img src={scanPreview} alt="스캔" className="w-full rounded-lg max-h-48 object-contain bg-black" />}
+
+              {!scanResult && !scanLoading && (
+                <button onClick={runOcr} className="w-full flex items-center justify-center gap-2 bg-[#3498db] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-[#2980b9]">
+                  <Camera size={16} /> AI 인식 시작
+                </button>
+              )}
+
+              {scanLoading && (
+                <div className="flex items-center justify-center gap-2 py-4 text-[#8b8fa3] text-[12px]">
+                  <Loader2 size={16} className="animate-spin" /> Claude AI가 서류를 분석 중...
+                </div>
+              )}
+
+              {scanError && (
+                <div className="text-[11px] text-[#e74c3c] bg-[#e74c3c]/10 rounded-lg p-3">{scanError}</div>
+              )}
+
+              {scanResult && (
+                <div className="space-y-2">
+                  <div className="text-[11px] text-[#4CAF50] font-medium mb-2">인식 완료! 아래 내용을 확인하세요.</div>
+                  <div className="bg-[#0f1117] rounded-lg p-3 space-y-1.5 text-[12px]">
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">채무명</span><span>{scanResult.name || '-'}</span></div>
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">유형</span><span>{scanResult.type || '-'}</span></div>
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">총 대출금</span><span className="tabular-nums">{krw(Number(scanResult.totalLoan))}</span></div>
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">연이율</span><span>{scanResult.rate}%</span></div>
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">갚은 금액</span><span className="text-[#4CAF50] tabular-nums">{krw(Number(scanResult.paidAmount))}</span></div>
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">잔액</span><span className="text-[#e74c3c] tabular-nums">{krw(Number(scanResult.balance))}</span></div>
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">월 상환</span><span className="tabular-nums">{krw(Number(scanResult.monthly))}</span></div>
+                    <div className="flex justify-between"><span className="text-[#8b8fa3]">납부일</span><span>매월 {scanResult.payDay}일</span></div>
+                    {scanResult.dueDate && <div className="flex justify-between"><span className="text-[#8b8fa3]">만기일</span><span>{scanResult.dueDate}</span></div>}
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={() => { setScanResult(null); setScanError('') }} className="flex-1 border border-[#2a2d3a] text-[#8b8fa3] py-2 rounded-lg text-[12px] hover:text-white">다시 인식</button>
+                    <button onClick={applyScanResult} className="flex-1 bg-[#2E7D32] text-white py-2 rounded-lg text-[12px] font-medium hover:bg-[#4CAF50]">등록하기</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <CrudModal open={modal} title={editId ? '채무 수정' : '채무 등록'} fields={DEBT_FIELDS} values={form} onChange={handleFormChange} onSave={save} onClose={() => setModal(false)} />
       <ConfirmDialog open={!!deleteId} message="이 채무를 삭제하시겠습니까?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} />
     </div>
