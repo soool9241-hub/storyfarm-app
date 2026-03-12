@@ -44,12 +44,7 @@ interface MonthlyRevenue {
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-const DEFAULT_LIST = [
-  { id: '1', createdAt: '2026-03-22', date: '2026-03-22', desc: 'SUS304 정밀부품 100EA', biz: '공방', type: 'CNC가공', amount: 5000000, confirmed: false, counterparty: '삼성전자 협력사' },
-  { id: '2', createdAt: '2026-03-12', date: '2026-03-12', desc: 'MDF 레이저커팅 간판', biz: '공방', type: '레이저', amount: 500000, confirmed: true, counterparty: '로컬카페' },
-  { id: '3', createdAt: '2026-03-07', date: '2026-03-07', desc: 'SUS304 브라켓 30EA', biz: '공방', type: 'CNC가공', amount: 1800000, confirmed: true, counterparty: '현대모비스' },
-  { id: '4', createdAt: '2026-03-03', date: '2026-03-03', desc: 'AL6061 정밀가공 50EA', biz: '공방', type: 'CNC가공', amount: 2500000, confirmed: true, counterparty: '(주)테크원' },
-]
+const DEFAULT_LIST: { id: string; createdAt: string; date: string; desc: string; biz: string; type: string; amount: number; confirmed: boolean; counterparty: string }[] = []
 
 type IncomeItem = typeof DEFAULT_LIST[number]
 
