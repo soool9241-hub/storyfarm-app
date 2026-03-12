@@ -1,11 +1,13 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 import { krw } from '../lib/format'
 
-const bepData = {
+const defaultBepData = {
   workshop: { fixed: 3731250, variableRate: 0.307, bep: 5384204, current: 3850000, rate: 71.5 },
   pension: { fixed: 200000, variableRate: 0.1, bep: 222222, current: 800000, rate: 360 },
 }
 
-const orders = [
+const defaultOrders = [
   { id: 'CNC-031', desc: 'AL6061 정밀가공 50EA', revenue: 2500000, cost: 1302500, margin: 47.9, status: 'ok' },
   { id: 'CNC-032', desc: 'SUS304 브라켓 30EA', revenue: 1800000, cost: 1154000, margin: 35.9, status: 'ok' },
   { id: 'CNC-033', desc: 'MDF 레이저커팅 간판', revenue: 500000, cost: 192000, margin: 61.6, status: 'ok' },
@@ -27,6 +29,86 @@ function GaugeBar({ label, rate, color }: { label: string; rate: number; color: 
 }
 
 export default function Bep() {
+  const [bepData, setBepData] = useState(defaultBepData)
+  const [orders, setOrders] = useState(defaultOrders)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const now = new Date()
+        const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+        const monthStart = `${yearMonth}-01`
+        const monthEnd = `${yearMonth}-31`
+
+        const [bepRes, ordersRes, incomeRes, pensionRes] = await Promise.all([
+          supabase.from('bep_config').select('*'),
+          supabase.from('orders').select('*').order('date', { ascending: false }),
+          supabase.from('income').select('*').gte('date', monthStart).lte('date', monthEnd),
+          supabase.from('v_reservation_revenue').select('*').gte('date', monthStart).lte('date', monthEnd),
+        ])
+
+        if (bepRes.error) throw bepRes.error
+
+        // Process BEP config
+        if (bepRes.data && bepRes.data.length > 0) {
+          const newBepData = { ...defaultBepData }
+
+          for (const row of bepRes.data) {
+            const totalFixed = (row.fixed_rent || 0) + (row.fixed_labor || 0) + (row.fixed_interest || 0) + (row.fixed_depreciation || 0) + (row.fixed_other || 0)
+            const variableRate = row.variable_rate || 0
+            const bep = variableRate < 1 ? totalFixed / (1 - variableRate) : totalFixed
+
+            // Get current revenue for this biz
+            let current = 0
+            if (row.biz === '공방' || row.biz === 'workshop') {
+              if (incomeRes.data) {
+                current = incomeRes.data
+                  .filter((inc: any) => inc.biz === row.biz || inc.biz === '공방' || inc.biz === 'workshop')
+                  .reduce((sum: number, inc: any) => sum + (inc.amount || 0), 0)
+              }
+              const rate = bep > 0 ? (current / bep) * 100 : 0
+              newBepData.workshop = { fixed: totalFixed, variableRate, bep, current, rate }
+            } else if (row.biz === '펜션' || row.biz === 'pension') {
+              if (pensionRes.data && pensionRes.data.length > 0) {
+                current = pensionRes.data.reduce((sum: number, r: any) => sum + (r.revenue || r.amount || 0), 0)
+              } else if (incomeRes.data) {
+                current = incomeRes.data
+                  .filter((inc: any) => inc.biz === row.biz || inc.biz === '펜션' || inc.biz === 'pension')
+                  .reduce((sum: number, inc: any) => sum + (inc.amount || 0), 0)
+              }
+              const rate = bep > 0 ? (current / bep) * 100 : 0
+              newBepData.pension = { fixed: totalFixed, variableRate, bep, current, rate }
+            }
+          }
+
+          setBepData(newBepData)
+        }
+
+        // Process orders
+        if (!ordersRes.error && ordersRes.data && ordersRes.data.length > 0) {
+          const mappedOrders = ordersRes.data.map((o: any) => {
+            const margin = o.margin_rate ?? (o.revenue > 0 ? ((o.revenue - o.total_cost) / o.revenue) * 100 : 0)
+            const status = margin > 15 ? 'ok' : margin < 5 ? 'danger' : 'ok'
+            return {
+              id: o.order_no || o.id,
+              desc: o.desc || o.description || '',
+              revenue: o.revenue || 0,
+              cost: o.total_cost || 0,
+              margin: typeof margin === 'number' ? margin : 0,
+              status,
+            }
+          })
+          setOrders(mappedOrders)
+        }
+      } catch (err) {
+        console.error('BEP fetch error, using defaults:', err)
+        // Keep default values on error
+      }
+    }
+
+    fetchData()
+  }, [])
+
   return (
     <div className="space-y-5">
       <h2 className="text-lg font-bold">손익분기점</h2>

@@ -1,20 +1,22 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'
 import { krw } from '../lib/format'
 
-const yearlyData = [
+const defaultYearlyData = [
   { month: '1월', 수입: 3300000, 지출: 6500000, 순이익: -3200000 },
   { month: '2월', 수입: 4000000, 지출: 6800000, 순이익: -2800000 },
   { month: '3월', 수입: 4650000, 지출: 8175000, 순이익: -3525000 },
   { month: '4월', 수입: 0, 지출: 0, 순이익: 0 },
 ]
 
-const growthData = [
+const defaultGrowthData = [
   { month: '1월', MoM: -15.2, YoY: 0 },
   { month: '2월', MoM: 21.2, YoY: 0 },
   { month: '3월', MoM: 16.3, YoY: 0 },
 ]
 
-const orderAnalysis = [
+const defaultOrderAnalysis = [
   { type: 'AL6061 가공', count: 12, revenue: 28500000, avgMargin: 42.3 },
   { type: 'SUS304 가공', count: 8, revenue: 19200000, avgMargin: 33.1 },
   { type: 'MDF 레이저', count: 15, revenue: 5800000, avgMargin: 58.4 },
@@ -22,6 +24,110 @@ const orderAnalysis = [
 ]
 
 export default function Yearly() {
+  const [yearlyData, setYearlyData] = useState(defaultYearlyData)
+  const [growthData, setGrowthData] = useState(defaultGrowthData)
+  const [orderAnalysis, setOrderAnalysis] = useState(defaultOrderAnalysis)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const currentYear = new Date().getFullYear()
+        const yearStart = `${currentYear}-01-01`
+        const yearEnd = `${currentYear}-12-31`
+
+        const [incomeRes, expenseRes, ordersRes] = await Promise.all([
+          supabase.from('income').select('*').gte('date', yearStart).lte('date', yearEnd),
+          supabase.from('expenses').select('*').gte('date', yearStart).lte('date', yearEnd),
+          supabase.from('orders').select('*'),
+        ])
+
+        // Process yearly data (income & expenses by month)
+        if (!incomeRes.error && !expenseRes.error && (incomeRes.data || expenseRes.data)) {
+          const monthlyMap: Record<number, { income: number; expense: number }> = {}
+          for (let m = 1; m <= 12; m++) {
+            monthlyMap[m] = { income: 0, expense: 0 }
+          }
+
+          if (incomeRes.data) {
+            for (const row of incomeRes.data) {
+              const month = new Date(row.date).getMonth() + 1
+              monthlyMap[month].income += row.amount || 0
+            }
+          }
+
+          if (expenseRes.data) {
+            for (const row of expenseRes.data) {
+              const month = new Date(row.date).getMonth() + 1
+              monthlyMap[month].expense += row.amount || 0
+            }
+          }
+
+          const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
+          const newYearlyData = monthNames.map((name, i) => {
+            const m = i + 1
+            const income = monthlyMap[m].income
+            const expense = monthlyMap[m].expense
+            return { month: name, 수입: income, 지출: expense, 순이익: income - expense }
+          })
+
+          setYearlyData(newYearlyData)
+
+          // Compute MoM growth
+          const newGrowthData: typeof defaultGrowthData = []
+          for (let i = 0; i < newYearlyData.length; i++) {
+            if (newYearlyData[i].수입 === 0 && newYearlyData[i].지출 === 0) continue
+            const thisMonth = newYearlyData[i].수입
+            const lastMonth = i > 0 ? newYearlyData[i - 1].수입 : 0
+            const mom = lastMonth > 0 ? ((thisMonth - lastMonth) / lastMonth) * 100 : 0
+            newGrowthData.push({ month: newYearlyData[i].month, MoM: Math.round(mom * 10) / 10, YoY: 0 })
+          }
+
+          if (newGrowthData.length > 0) {
+            setGrowthData(newGrowthData)
+          }
+        }
+
+        // Process order analysis
+        if (!ordersRes.error && ordersRes.data && ordersRes.data.length > 0) {
+          const groupMap: Record<string, { count: number; revenue: number; totalMargin: number }> = {}
+
+          for (const order of ordersRes.data) {
+            const desc = order.desc || order.description || ''
+            // Extract type pattern from description (first part before space or specific keywords)
+            let type = '기타 용역'
+            if (desc.includes('AL6061')) type = 'AL6061 가공'
+            else if (desc.includes('SUS304')) type = 'SUS304 가공'
+            else if (desc.includes('MDF') || desc.includes('레이저')) type = 'MDF 레이저'
+
+            if (!groupMap[type]) {
+              groupMap[type] = { count: 0, revenue: 0, totalMargin: 0 }
+            }
+            groupMap[type].count += 1
+            groupMap[type].revenue += order.revenue || 0
+            const margin = order.margin_rate ?? (order.revenue > 0 ? ((order.revenue - (order.total_cost || 0)) / order.revenue) * 100 : 0)
+            groupMap[type].totalMargin += margin
+          }
+
+          const newOrderAnalysis = Object.entries(groupMap).map(([type, data]) => ({
+            type,
+            count: data.count,
+            revenue: data.revenue,
+            avgMargin: Math.round((data.totalMargin / data.count) * 10) / 10,
+          }))
+
+          if (newOrderAnalysis.length > 0) {
+            setOrderAnalysis(newOrderAnalysis)
+          }
+        }
+      } catch (err) {
+        console.error('Yearly fetch error, using defaults:', err)
+        // Keep default values on error
+      }
+    }
+
+    fetchData()
+  }, [])
+
   return (
     <div className="space-y-5">
       <h2 className="text-lg font-bold">연도별 분석 — 2026</h2>

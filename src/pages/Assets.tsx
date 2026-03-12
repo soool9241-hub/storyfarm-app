@@ -1,20 +1,63 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Cloud, CloudOff } from 'lucide-react'
 import { krw } from '../lib/format'
 import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { useCloudList } from '../hooks/useCloudList'
 
-const INIT_ASSETS = [
-  { id: '1', name: 'CNC 머신 1호', model: 'DMG MORI', acquired: '2023-06-15', cost: 30000000, life: 60, method: '정액법', accDep: 14850000, bookValue: 15150000, lifePct: 55 },
-  { id: '2', name: '레이저커터', model: 'Universal VLS6.60', acquired: '2024-01-10', cost: 15000000, life: 60, method: '정액법', accDep: 5850000, bookValue: 9150000, lifePct: 43.3 },
-  { id: '3', name: 'CNC 라우터', model: 'ShopBot PRSalpha', acquired: '2024-06-01', cost: 8000000, life: 60, method: '정액법', accDep: 2880000, bookValue: 5120000, lifePct: 40 },
-]
+interface AssetItem {
+  id: string
+  name: string
+  model: string
+  category: string
+  acquired: string
+  cost: number
+  life: number
+  method: string
+  accDep: number
+  salvage_rate: number
+  location: string
+  serial_number: string
+  is_active: boolean
+  note: string
+}
 
-const INIT_MAINT = [
-  { id: '1', date: '2026-02-15', asset: 'CNC 머신 1호', desc: '스핀들 베어링 교체', cost: 450000, vendor: '한국DMG' },
-  { id: '2', date: '2026-01-20', asset: '레이저커터', desc: '레이저 튜브 교체', cost: 280000, vendor: '유니버설 서비스' },
-  { id: '3', date: '2025-12-05', asset: 'CNC 라우터', desc: '정기 점검', cost: 80000, vendor: '자체 점검' },
-]
+interface MaintItem {
+  id: string
+  asset_name: string
+  date: string
+  desc: string
+  cost: number
+  vendor: string
+}
+
+function loadAssets(): AssetItem[] {
+  try {
+    const saved = localStorage.getItem('storyfarm_assets')
+    if (saved) return JSON.parse(saved) as AssetItem[]
+  } catch { /* ignore */ }
+  return []
+}
+
+function loadMaint(): MaintItem[] {
+  try {
+    const saved = localStorage.getItem('storyfarm_maintenance')
+    if (saved) return JSON.parse(saved) as MaintItem[]
+  } catch { /* ignore */ }
+  return []
+}
+
+function computeBookValue(a: AssetItem) {
+  return a.cost - a.accDep
+}
+
+function computeLifePct(a: AssetItem) {
+  const acquired = new Date(a.acquired)
+  const now = new Date()
+  const elapsedMonths = (now.getFullYear() - acquired.getFullYear()) * 12 + (now.getMonth() - acquired.getMonth())
+  const pct = Math.min(100, Math.max(0, (elapsedMonths / a.life) * 100))
+  return Math.round(pct * 10) / 10
+}
 
 const ASSET_FIELDS = [
   { key: 'name', label: '장비명', type: 'text' as const, placeholder: '장비명' },
@@ -27,15 +70,16 @@ const ASSET_FIELDS = [
 
 const MAINT_FIELDS = [
   { key: 'date', label: '날짜', type: 'date' as const },
-  { key: 'asset', label: '장비', type: 'text' as const, placeholder: '장비명' },
+  { key: 'asset_name', label: '장비', type: 'text' as const, placeholder: '장비명' },
   { key: 'desc', label: '내용', type: 'textarea' as const, placeholder: '내용을 입력하세요' },
   { key: 'cost', label: '비용', type: 'number' as const, placeholder: '0' },
   { key: 'vendor', label: '업체', type: 'text' as const, placeholder: '업체명' },
 ]
 
 export default function Assets() {
-  const [assets, setAssets] = useState(INIT_ASSETS)
-  const [maint, setMaint] = useState(INIT_MAINT)
+  const [assets, setAssets, assetsSyncing] = useCloudList<AssetItem>('assets', 'storyfarm_assets', loadAssets)
+  const [maint, setMaint, maintSyncing] = useCloudList<MaintItem>('maintenance', 'storyfarm_maintenance', loadMaint)
+  const cloudSyncing = assetsSyncing || maintSyncing
 
   // Asset CRUD
   const [assetModal, setAssetModal] = useState(false)
@@ -50,37 +94,39 @@ export default function Assets() {
   const [maintDeleteId, setMaintDeleteId] = useState<string | null>(null)
 
   const openAddAsset = () => { setAssetEditId(null); setAssetForm({ name: '', model: '', acquired: '', cost: 0, life: 60, method: '정액법' }); setAssetModal(true) }
-  const openEditAsset = (a: typeof INIT_ASSETS[0]) => { setAssetEditId(a.id); setAssetForm({ name: a.name, model: a.model, acquired: a.acquired, cost: a.cost, life: a.life, method: a.method }); setAssetModal(true) }
+  const openEditAsset = (a: AssetItem) => { setAssetEditId(a.id); setAssetForm({ name: a.name, model: a.model, acquired: a.acquired, cost: a.cost, life: a.life, method: a.method }); setAssetModal(true) }
   const saveAsset = () => {
     if (assetEditId) {
-      setAssets(prev => prev.map(a => a.id === assetEditId ? { ...a, ...assetForm, cost: Number(assetForm.cost), life: Number(assetForm.life) } as typeof a : a))
+      setAssets(prev => prev.map(a => a.id === assetEditId ? { ...a, ...assetForm, cost: Number(assetForm.cost), life: Number(assetForm.life) } as AssetItem : a))
     } else {
       const cost = Number(assetForm.cost)
-      setAssets(prev => [...prev, { id: Date.now().toString(), ...assetForm, cost, life: Number(assetForm.life), accDep: 0, bookValue: cost, lifePct: 0 } as typeof INIT_ASSETS[0]])
+      setAssets(prev => [...prev, { id: Date.now().toString(), ...assetForm, cost, life: Number(assetForm.life), accDep: 0, category: '장비', is_active: true } as unknown as AssetItem])
     }
     setAssetModal(false)
   }
   const confirmDeleteAsset = () => { if (assetDeleteId) setAssets(prev => prev.filter(a => a.id !== assetDeleteId)); setAssetDeleteId(null) }
 
-  const openAddMaint = () => { setMaintEditId(null); setMaintForm({ date: '', asset: '', desc: '', cost: 0, vendor: '' }); setMaintModal(true) }
-  const openEditMaint = (m: typeof INIT_MAINT[0]) => { setMaintEditId(m.id); setMaintForm({ date: m.date, asset: m.asset, desc: m.desc, cost: m.cost, vendor: m.vendor }); setMaintModal(true) }
+  const openAddMaint = () => { setMaintEditId(null); setMaintForm({ date: '', asset_name: '', desc: '', cost: 0, vendor: '' }); setMaintModal(true) }
+  const openEditMaint = (m: MaintItem) => { setMaintEditId(m.id); setMaintForm({ date: m.date, asset_name: m.asset_name, desc: m.desc, cost: m.cost, vendor: m.vendor }); setMaintModal(true) }
   const saveMaint = () => {
     if (maintEditId) {
-      setMaint(prev => prev.map(m => m.id === maintEditId ? { ...m, ...maintForm, cost: Number(maintForm.cost) } as typeof m : m))
+      setMaint(prev => prev.map(m => m.id === maintEditId ? { ...m, ...maintForm, cost: Number(maintForm.cost) } as MaintItem : m))
     } else {
-      setMaint(prev => [{ id: Date.now().toString(), ...maintForm, cost: Number(maintForm.cost) } as typeof INIT_MAINT[0], ...prev])
+      setMaint(prev => [{ id: Date.now().toString(), ...maintForm, cost: Number(maintForm.cost) } as unknown as MaintItem, ...prev])
     }
     setMaintModal(false)
   }
   const confirmDeleteMaint = () => { if (maintDeleteId) setMaint(prev => prev.filter(m => m.id !== maintDeleteId)); setMaintDeleteId(null) }
 
   const totalCost = assets.reduce((s, a) => s + a.cost, 0)
-  const totalBook = assets.reduce((s, a) => s + a.bookValue, 0)
+  const totalBook = assets.reduce((s, a) => s + computeBookValue(a), 0)
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">자산·장비 관리</h2>
+        <h2 className="text-lg font-bold flex items-center gap-2">자산·장비 관리
+          {cloudSyncing ? <CloudOff size={14} className="text-yellow-500 animate-pulse" /> : <Cloud size={14} className="text-green-400" />}
+        </h2>
         <button onClick={openAddAsset} className="flex items-center gap-1.5 bg-[#2E7D32] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#4CAF50]">
           <Plus size={16} /> 장비 등록
         </button>
@@ -99,7 +145,10 @@ export default function Assets() {
 
       {/* 장비 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {assets.map(a => (
+        {assets.map(a => {
+          const bookValue = computeBookValue(a)
+          const lifePct = computeLifePct(a)
+          return (
           <div key={a.id} className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
             <div className="flex items-center justify-between mb-1">
               <h4 className="font-semibold text-sm">{a.name}</h4>
@@ -111,20 +160,21 @@ export default function Assets() {
             <p className="text-[11px] text-[#8b8fa3] mb-3">{a.model} · {a.method}</p>
             <div className="space-y-2 text-[12px]">
               <div className="flex justify-between"><span className="text-[#8b8fa3]">취득원가</span><span>{krw(a.cost)}</span></div>
-              <div className="flex justify-between"><span className="text-[#8b8fa3]">장부가</span><span className="text-[#4CAF50]">{krw(a.bookValue)}</span></div>
+              <div className="flex justify-between"><span className="text-[#8b8fa3]">장부가</span><span className="text-[#4CAF50]">{krw(bookValue)}</span></div>
               <div className="flex justify-between"><span className="text-[#8b8fa3]">감가상각 누계</span><span className="text-[#e67e22]">{krw(a.accDep)}</span></div>
             </div>
             <div className="mt-3">
               <div className="flex justify-between text-[11px] mb-1">
                 <span className="text-[#8b8fa3]">내용연수 소진</span>
-                <span className={a.lifePct > 80 ? 'text-[#e74c3c]' : a.lifePct > 50 ? 'text-[#e67e22]' : 'text-[#4CAF50]'}>{a.lifePct}%</span>
+                <span className={lifePct > 80 ? 'text-[#e74c3c]' : lifePct > 50 ? 'text-[#e67e22]' : 'text-[#4CAF50]'}>{lifePct}%</span>
               </div>
               <div className="h-2 bg-[#2a2d3a] rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${a.lifePct > 80 ? 'bg-[#e74c3c]' : a.lifePct > 50 ? 'bg-[#e67e22]' : 'bg-[#2E7D32]'}`} style={{ width: `${a.lifePct}%` }} />
+                <div className={`h-full rounded-full ${lifePct > 80 ? 'bg-[#e74c3c]' : lifePct > 50 ? 'bg-[#e67e22]' : 'bg-[#2E7D32]'}`} style={{ width: `${lifePct}%` }} />
               </div>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* 유지보수 이력 */}
@@ -151,7 +201,7 @@ export default function Assets() {
               {maint.map(m => (
                 <tr key={m.id} className="border-b border-[#2a2d3a]/50 hover:bg-[#22252f]">
                   <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{m.date}</td>
-                  <td className="py-2 px-2">{m.asset}</td>
+                  <td className="py-2 px-2">{m.asset_name}</td>
                   <td className="py-2 px-2">{m.desc}</td>
                   <td className="py-2 px-2 text-[#8b8fa3]">{m.vendor}</td>
                   <td className="py-2 px-2 text-right tabular-nums text-[#e67e22]">{krw(m.cost)}</td>

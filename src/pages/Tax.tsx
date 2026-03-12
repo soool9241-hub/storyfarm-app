@@ -1,14 +1,71 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 import { FileText, Calendar, Download } from 'lucide-react'
 import { krw } from '../lib/format'
 
-const taxCalendar = [
+const defaultTaxCalendar = [
   { date: '2026-01-25', desc: '부가세 신고·납부 (2기 확정)', status: 'done' },
   { date: '2026-05-31', desc: '종합소득세 신고·납부', status: 'upcoming' },
   { date: '2026-07-25', desc: '부가세 신고·납부 (1기 확정)', status: 'upcoming' },
   { date: '2026-11-30', desc: '중간예납', status: 'upcoming' },
 ]
 
+const defaultVat = { sales: 2790000, purchase: 1830000, due: 960000, note: '* 세금계산서 미수취 건 3건 — 매입세액 공제 누락 가능' }
+const defaultIncomeTax = { income: 55800000, expense: 49140000, taxBase: 6660000, bracket: '6% (1,400만 이하)', tax: 399600 }
+
 export default function Tax() {
+  const [taxCalendar, setTaxCalendar] = useState(defaultTaxCalendar)
+  const [vat, setVat] = useState(defaultVat)
+  const [incomeTax, setIncomeTax] = useState(defaultIncomeTax)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const { data, error } = await supabase.from('tax_records').select('*').order('due_date')
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
+          // Build tax calendar from records
+          const calendar = data.map((record: any) => ({
+            date: record.due_date || '',
+            desc: `${record.type || ''}${record.period ? ' ' + record.period : ''}`,
+            status: record.status || 'upcoming',
+          }))
+          setTaxCalendar(calendar)
+
+          // Find VAT record
+          const vatRecord = data.find((r: any) => r.type === '부가세')
+          if (vatRecord) {
+            setVat({
+              sales: vatRecord.sales_tax || vatRecord.매출세액 || defaultVat.sales,
+              purchase: vatRecord.purchase_tax || vatRecord.매입세액 || defaultVat.purchase,
+              due: vatRecord.due_amount || vatRecord.납부액 || defaultVat.due,
+              note: vatRecord.note || defaultVat.note,
+            })
+          }
+
+          // Find income tax record
+          const incomeRecord = data.find((r: any) => r.type === '종합소득세')
+          if (incomeRecord) {
+            setIncomeTax({
+              income: incomeRecord.business_income || incomeRecord.사업소득 || defaultIncomeTax.income,
+              expense: incomeRecord.necessary_expense || incomeRecord.필요경비 || defaultIncomeTax.expense,
+              taxBase: incomeRecord.tax_base || incomeRecord.과세표준 || defaultIncomeTax.taxBase,
+              bracket: incomeRecord.tax_bracket || incomeRecord.세율구간 || defaultIncomeTax.bracket,
+              tax: incomeRecord.estimated_tax || incomeRecord.예상세액 || defaultIncomeTax.tax,
+            })
+          }
+        }
+      } catch (err) {
+        console.error('Tax fetch error, using defaults:', err)
+        // Keep default values on error
+      }
+    }
+
+    fetchData()
+  }, [])
+
   return (
     <div className="space-y-5">
       <h2 className="text-lg font-bold">세무 관리</h2>
@@ -20,12 +77,12 @@ export default function Tax() {
             <FileText size={16} className="text-[#3498db]" /> 부가세 예상 (2026년 1기)
           </h3>
           <div className="space-y-2 text-[13px]">
-            <div className="flex justify-between"><span className="text-[#8b8fa3]">매출세액 (1~6월 예상)</span><span>{krw(2790000)}</span></div>
-            <div className="flex justify-between"><span className="text-[#8b8fa3]">매입세액</span><span>{krw(1830000)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">매출세액 (1~6월 예상)</span><span>{krw(vat.sales)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">매입세액</span><span>{krw(vat.purchase)}</span></div>
             <div className="flex justify-between border-t border-[#2a2d3a] pt-2 font-bold">
-              <span>예상 납부액</span><span className="text-[#e74c3c]">{krw(960000)}</span>
+              <span>예상 납부액</span><span className="text-[#e74c3c]">{krw(vat.due)}</span>
             </div>
-            <p className="text-[11px] text-[#8b8fa3] mt-2">* 세금계산서 미수취 건 3건 — 매입세액 공제 누락 가능</p>
+            <p className="text-[11px] text-[#8b8fa3] mt-2">{vat.note}</p>
           </div>
         </div>
 
@@ -35,12 +92,12 @@ export default function Tax() {
             <FileText size={16} className="text-[#9b59b6]" /> 종합소득세 예상
           </h3>
           <div className="space-y-2 text-[13px]">
-            <div className="flex justify-between"><span className="text-[#8b8fa3]">사업소득 (연간 예상)</span><span>{krw(55800000)}</span></div>
-            <div className="flex justify-between"><span className="text-[#8b8fa3]">필요경비</span><span>{krw(49140000)}</span></div>
-            <div className="flex justify-between"><span className="text-[#8b8fa3]">과세표준</span><span>{krw(6660000)}</span></div>
-            <div className="flex justify-between"><span className="text-[#8b8fa3]">세율 구간</span><span>6% (1,400만 이하)</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">사업소득 (연간 예상)</span><span>{krw(incomeTax.income)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">필요경비</span><span>{krw(incomeTax.expense)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">과세표준</span><span>{krw(incomeTax.taxBase)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8b8fa3]">세율 구간</span><span>{incomeTax.bracket}</span></div>
             <div className="flex justify-between border-t border-[#2a2d3a] pt-2 font-bold">
-              <span>예상 세액</span><span className="text-[#e74c3c]">{krw(399600)}</span>
+              <span>예상 세액</span><span className="text-[#e74c3c]">{krw(incomeTax.tax)}</span>
             </div>
           </div>
         </div>

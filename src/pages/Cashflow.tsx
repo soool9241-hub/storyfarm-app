@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { krw } from '../lib/format'
 
-const forecast = [
+const defaultForecast = [
   { date: '3/10', 입금: 0, 출금: 300000, 잔고: 8200000 },
   { date: '3/15', 입금: 0, 출금: 537500, 잔고: 7662500 },
   { date: '3/17', 입금: 0, 출금: 500000, 잔고: 7162500 },
@@ -12,7 +14,7 @@ const forecast = [
   { date: '4/4', 입금: 0, 출금: 0, 잔고: 3262500 },
 ]
 
-const schedule = [
+const defaultSchedule = [
   { date: '3/10', type: 'expense', desc: '공과금', amount: 300000 },
   { date: '3/15', type: 'expense', desc: '국민은행 이자 + 국민카드', amount: 537500 },
   { date: '3/17', type: 'expense', desc: '신한카드 결제', amount: 500000 },
@@ -22,6 +24,94 @@ const schedule = [
 ]
 
 export default function Cashflow() {
+  const [forecast, setForecast] = useState(defaultForecast)
+  const [schedule, setSchedule] = useState(defaultSchedule)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [scheduleRes, incomeRes, expenseRes] = await Promise.all([
+          supabase.from('cashflow_schedule').select('*').order('day_of_month'),
+          supabase.from('income').select('amount'),
+          supabase.from('expenses').select('amount'),
+        ])
+
+        if (scheduleRes.error) throw scheduleRes.error
+
+        if (scheduleRes.data && scheduleRes.data.length > 0) {
+          // Compute base cash balance
+          const totalIncome = incomeRes.data
+            ? incomeRes.data.reduce((sum: number, r: any) => sum + (r.amount || 0), 0)
+            : 0
+          const totalExpense = expenseRes.data
+            ? expenseRes.data.reduce((sum: number, r: any) => sum + (r.amount || 0), 0)
+            : 0
+          let baseCash = totalIncome - totalExpense
+
+          const now = new Date()
+          const currentMonth = now.getMonth() + 1
+          const currentDay = now.getDate()
+
+          // Build schedule display items
+          const mappedSchedule = scheduleRes.data.map((item: any) => {
+            const dayOfMonth = item.day_of_month || 1
+            const month = dayOfMonth >= currentDay ? currentMonth : currentMonth + 1
+            const dateStr = `${month}/${dayOfMonth}`
+            return {
+              date: dateStr,
+              type: 'expense' as const,
+              desc: item.name || item.desc || '',
+              amount: item.amount || 0,
+              dayOfMonth,
+            }
+          })
+
+          // Build 30-day forecast
+          const forecastPoints: typeof defaultForecast = []
+          let runningBalance = baseCash
+
+          // Sort schedule items by effective date
+          const sortedItems = [...mappedSchedule].sort((a, b) => {
+            const aMonth = a.dayOfMonth >= currentDay ? currentMonth : currentMonth + 1
+            const bMonth = b.dayOfMonth >= currentDay ? currentMonth : currentMonth + 1
+            if (aMonth !== bMonth) return aMonth - bMonth
+            return a.dayOfMonth - b.dayOfMonth
+          })
+
+          for (const item of sortedItems) {
+            runningBalance -= item.amount
+            forecastPoints.push({
+              date: item.date,
+              입금: 0,
+              출금: item.amount,
+              잔고: runningBalance,
+            })
+          }
+
+          // Add end-of-period point if needed
+          if (forecastPoints.length > 0) {
+            const lastPoint = forecastPoints[forecastPoints.length - 1]
+            const endMonth = currentMonth + 1
+            forecastPoints.push({
+              date: `${endMonth}/4`,
+              입금: 0,
+              출금: 0,
+              잔고: lastPoint.잔고,
+            })
+          }
+
+          setForecast(forecastPoints.length > 0 ? forecastPoints : defaultForecast)
+          setSchedule(mappedSchedule.map(({ dayOfMonth, ...rest }: any) => rest))
+        }
+      } catch (err) {
+        console.error('Cashflow fetch error, using defaults:', err)
+        // Keep default values on error
+      }
+    }
+
+    fetchData()
+  }, [])
+
   return (
     <div className="space-y-5">
       <h2 className="text-lg font-bold">현금흐름 예측</h2>
