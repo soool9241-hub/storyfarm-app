@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, CalendarDays, BarChart3 } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, CalendarDays, BarChart3, Trophy, Crown, Medal } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import HometaxImport from '../components/HometaxImport'
 import { krw } from '../lib/format'
@@ -341,6 +341,20 @@ export default function Income() {
       : []),
   ].filter(d => d.value > 0)
 
+  // 최대 매출 랭킹 (거래처/고객 기준 합산)
+  const rankMap = new Map<string, number>()
+  filteredList.forEach(i => {
+    const name = i.counterparty || i.desc || '기타'
+    rankMap.set(name, (rankMap.get(name) || 0) + i.amount)
+  })
+  filteredPension.forEach(r => {
+    const name = r.guest_name || '미지정'
+    rankMap.set(name, (rankMap.get(name) || 0) + r.total_revenue)
+  })
+  const topRanking = [...rankMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+
   const monthlyData = monthlyRevenue.slice(0, 6).reverse().map(m => ({
     month: `${m.reservation_month}월`,
     펜션: m.total_revenue,
@@ -417,6 +431,37 @@ export default function Income() {
           <div className="text-xl font-bold text-white">{krw(workshopTotal + pensionTotal)}</div>
         </div>
       </div>
+
+      {/* 최대 매출 TOP 5 */}
+      {topRanking.length > 0 && (
+        <div className="bg-[#1a1d27] border border-[#f1c40f]/30 rounded-xl p-4">
+          <h3 className="text-sm font-semibold mb-3 pb-2 border-b border-[#2a2d3a] flex items-center gap-2">
+            <Trophy size={14} className="text-[#f1c40f]" />
+            매출 TOP 5
+            <span className="text-[10px] text-[#8b8fa3] font-normal">
+              {viewMode === 'monthly' ? `${viewYear}년 ${viewMonth}월` : viewMode === 'yearly' ? `${viewYear}년` : '전체 누적'}
+            </span>
+          </h3>
+          <div className="space-y-2">
+            {topRanking.map(([name, amount], idx) => {
+              const maxAmount = topRanking[0][1]
+              const pct = maxAmount > 0 ? (amount / maxAmount) * 100 : 0
+              const rankIcon = idx === 0 ? <Crown size={14} className="text-[#f1c40f]" /> : idx === 1 ? <Medal size={14} className="text-[#c0c0c0]" /> : idx === 2 ? <Medal size={14} className="text-[#cd7f32]" /> : <span className="w-[14px] text-center text-[11px] text-[#8b8fa3]">{idx + 1}</span>
+              const barColor = idx === 0 ? '#f1c40f' : idx === 1 ? '#c0c0c0' : idx === 2 ? '#cd7f32' : '#2E7D32'
+              return (
+                <div key={name} className="flex items-center gap-3">
+                  <div className="w-5 flex justify-center shrink-0">{rankIcon}</div>
+                  <div className="w-[100px] sm:w-[140px] text-[12px] truncate shrink-0">{name}</div>
+                  <div className="flex-1 h-5 bg-[#0f1117] rounded-full overflow-hidden relative">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: barColor, opacity: 0.7 }} />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-white font-medium">{krw(amount)}</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 차트 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
