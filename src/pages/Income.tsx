@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, CalendarDays, BarChart3 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import HometaxImport from '../components/HometaxImport'
 import { krw } from '../lib/format'
@@ -80,6 +80,13 @@ export default function Income() {
   const [form, setForm] = useState<Record<string, string | number>>({})
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [hometaxOpen, setHometaxOpen] = useState(false)
+
+  // 보기 모드: 월별 / 연도별 / 총누적
+  type ViewMode = 'monthly' | 'yearly' | 'total'
+  const [viewMode, setViewMode] = useState<ViewMode>('monthly')
+  const nowDate = new Date()
+  const [viewYear, setViewYear] = useState(nowDate.getFullYear())
+  const [viewMonth, setViewMonth] = useState(nowDate.getMonth() + 1)
 
   // 필터 & 정렬 & 페이지네이션 & 선택
   const [dateFrom, setDateFrom] = useState('')
@@ -274,10 +281,23 @@ export default function Income() {
     XLSX.writeFile(wb, filename)
   }
 
+  // 보기 모드에 따른 기간 필터
+  const matchViewMode = (dateStr: string) => {
+    if (viewMode === 'total') return true
+    const d = new Date(dateStr)
+    if (viewMode === 'yearly') return d.getFullYear() === viewYear
+    return d.getFullYear() === viewYear && d.getMonth() + 1 === viewMonth
+  }
+
+  // 펜션 매출도 보기 모드 필터 적용
+  const filteredPension = pensionRevenue.filter(r => r.status !== 'cancelled' && matchViewMode(r.reservation_date))
+  const filteredPensionTotal = filteredPension.reduce((s, r) => s + r.total_revenue, 0)
+
   // 필터링 + 정렬
   const BIZ_OPTS = ['전체', '공방', '펜션', '기타']
   const TYPE_OPTS = ['전체', ...new Set(list.map(i => i.type))]
   const filteredList = list.filter(i => {
+    if (!matchViewMode(i.date)) return false
     if (dateFrom && i.date < dateFrom) return false
     if (dateTo && i.date > dateTo) return false
     if (filterBiz !== '전체' && i.biz !== filterBiz) return false
@@ -301,18 +321,23 @@ export default function Income() {
   const clearFilters = () => { setDateFrom(''); setDateTo(''); setFilterBiz('전체'); setFilterType('전체'); setSearchWord(''); setIncPage(1) }
   const hasFilters = dateFrom || dateTo || filterBiz !== '전체' || filterType !== '전체' || searchWord
 
-  // 차트 데이터 계산
-  const pensionTotal = pensionRevenue
-    .filter(r => r.status !== 'cancelled')
-    .reduce((s, r) => s + r.total_revenue, 0)
-  const workshopTotal = list.reduce((s, i) => s + i.amount, 0)
+  // 차트 데이터 계산 (보기 모드 적용)
+  const pensionTotal = filteredPensionTotal
+  const workshopTotal = filteredList.reduce((s, i) => s + i.amount, 0)
+
+  // 연도 목록 (데이터에서 추출)
+  const yearSet = new Set<number>()
+  list.forEach(i => yearSet.add(new Date(i.date).getFullYear()))
+  pensionRevenue.forEach(r => yearSet.add(new Date(r.reservation_date).getFullYear()))
+  yearSet.add(nowDate.getFullYear())
+  const availableYears = [...yearSet].sort((a, b) => b - a)
 
   const channelData = [
-    { name: 'CNC 가공', value: list.filter(i => i.type === 'CNC가공').reduce((s, i) => s + i.amount, 0), color: '#2E7D32' },
-    { name: '레이저', value: list.filter(i => i.type === '레이저').reduce((s, i) => s + i.amount, 0), color: '#4CAF50' },
+    { name: 'CNC 가공', value: filteredList.filter(i => i.type === 'CNC가공').reduce((s, i) => s + i.amount, 0), color: '#2E7D32' },
+    { name: '레이저', value: filteredList.filter(i => i.type === '레이저').reduce((s, i) => s + i.amount, 0), color: '#4CAF50' },
     { name: '펜션 매출', value: pensionTotal, color: '#9b59b6' },
-    ...(list.filter(i => !['CNC가공', '레이저'].includes(i.type)).length > 0
-      ? [{ name: '기타', value: list.filter(i => !['CNC가공', '레이저'].includes(i.type)).reduce((s, i) => s + i.amount, 0), color: '#f1c40f' }]
+    ...(filteredList.filter(i => !['CNC가공', '레이저'].includes(i.type)).length > 0
+      ? [{ name: '기타', value: filteredList.filter(i => !['CNC가공', '레이저'].includes(i.type)).reduce((s, i) => s + i.amount, 0), color: '#f1c40f' }]
       : []),
   ].filter(d => d.value > 0)
 
@@ -342,20 +367,53 @@ export default function Income() {
         </div>
       </div>
 
-      {/* 총 매출 요약 */}
+      {/* 보기 모드 선택 */}
+      <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex bg-[#0f1117] rounded-lg p-0.5 border border-[#2a2d3a]">
+            {([['monthly', '월별', <Calendar key="m" size={13} />], ['yearly', '연도별', <CalendarDays key="y" size={13} />], ['total', '총누적', <BarChart3 key="t" size={13} />]] as [ViewMode, string, React.ReactNode][]).map(([mode, label, icon]) => (
+              <button key={mode} onClick={() => { setViewMode(mode); setIncPage(1) }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${viewMode === mode ? 'bg-[#2E7D32] text-white shadow-sm' : 'text-[#8b8fa3] hover:text-white'}`}>
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+          {viewMode !== 'total' && (
+            <div className="flex items-center gap-2">
+              <select value={viewYear} onChange={e => { setViewYear(Number(e.target.value)); setIncPage(1) }}
+                className="bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#2E7D32]">
+                {availableYears.map(y => <option key={y} value={y}>{y}년</option>)}
+              </select>
+              {viewMode === 'monthly' && (
+                <select value={viewMonth} onChange={e => { setViewMonth(Number(e.target.value)); setIncPage(1) }}
+                  className="bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#2E7D32]">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+                </select>
+              )}
+            </div>
+          )}
+          <span className="text-[11px] text-[#8b8fa3] ml-auto">
+            {viewMode === 'monthly' && `${viewYear}년 ${viewMonth}월`}
+            {viewMode === 'yearly' && `${viewYear}년 전체`}
+            {viewMode === 'total' && '전체 누적'}
+          </span>
+        </div>
+      </div>
+
+      {/* 매출 요약 */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 text-center">
-          <div className="text-[11px] text-[#8b8fa3] mb-1">공방 매출</div>
+          <div className="text-[11px] text-[#8b8fa3] mb-1">공방 매출{viewMode === 'monthly' ? ` (${viewMonth}월)` : viewMode === 'yearly' ? ` (${viewYear}년)` : ' (누적)'}</div>
           <div className="text-xl font-bold text-[#4CAF50]">{krw(workshopTotal)}</div>
         </div>
         <div className="bg-[#1a1d27] border border-[#9b59b6]/30 rounded-xl p-4 text-center">
           <div className="text-[11px] text-[#8b8fa3] mb-1 flex items-center justify-center gap-1">
-            <Database size={11} className="text-[#9b59b6]" /> 펜션 매출 (Supabase)
+            <Database size={11} className="text-[#9b59b6]" /> 펜션 매출{viewMode === 'monthly' ? ` (${viewMonth}월)` : viewMode === 'yearly' ? ` (${viewYear}년)` : ' (누적)'}
           </div>
           <div className="text-xl font-bold text-[#9b59b6]">{krw(pensionTotal)}</div>
         </div>
         <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 text-center">
-          <div className="text-[11px] text-[#8b8fa3] mb-1">총 매출</div>
+          <div className="text-[11px] text-[#8b8fa3] mb-1">총 매출{viewMode === 'monthly' ? ` (${viewMonth}월)` : viewMode === 'yearly' ? ` (${viewYear}년)` : ' (누적)'}</div>
           <div className="text-xl font-bold text-white">{krw(workshopTotal + pensionTotal)}</div>
         </div>
       </div>
@@ -401,7 +459,7 @@ export default function Income() {
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <Database size={14} className="text-[#9b59b6]" />
             달팽이아지트 펜션 매출
-            <span className="text-[#8b8fa3] font-normal text-[11px]">({pensionRevenue.filter(r => r.status !== 'cancelled').length}건)</span>
+            <span className="text-[#8b8fa3] font-normal text-[11px]">({filteredPension.length}건)</span>
             <span className="flex items-center gap-0.5 text-[10px] text-[#8b8fa3] font-normal ml-2"><Lock size={10} /> 읽기전용</span>
           </h3>
           <button onClick={fetchPensionData} disabled={loading} className="flex items-center gap-1 text-[11px] text-[#8b8fa3] hover:text-[#9b59b6] transition-colors disabled:opacity-50">
@@ -415,7 +473,7 @@ export default function Income() {
           </div>
         )}
 
-        {pensionRevenue.length > 0 ? (
+        {filteredPension.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-[12px] min-w-[700px]">
               <thead>
@@ -435,7 +493,7 @@ export default function Income() {
                 </tr>
               </thead>
               <tbody>
-                {pensionRevenue.map(r => (
+                {filteredPension.map(r => (
                   <tr key={r.id} className={`border-b border-[#2a2d3a]/50 hover:bg-[#22252f] ${r.status === 'cancelled' ? 'opacity-40 line-through' : ''}`}>
                     <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{r.created_at ? r.created_at.slice(0, 10) : '-'}</td>
                     <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{r.reservation_date}</td>
