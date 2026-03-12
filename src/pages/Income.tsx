@@ -42,11 +42,13 @@ interface MonthlyRevenue {
   total_revenue: number
 }
 
+const today = () => new Date().toISOString().slice(0, 10)
+
 const DEFAULT_LIST = [
-  { id: '1', date: '2026-03-22', desc: 'SUS304 정밀부품 100EA', biz: '공방', type: 'CNC가공', amount: 5000000, confirmed: false, counterparty: '삼성전자 협력사' },
-  { id: '2', date: '2026-03-12', desc: 'MDF 레이저커팅 간판', biz: '공방', type: '레이저', amount: 500000, confirmed: true, counterparty: '로컬카페' },
-  { id: '3', date: '2026-03-07', desc: 'SUS304 브라켓 30EA', biz: '공방', type: 'CNC가공', amount: 1800000, confirmed: true, counterparty: '현대모비스' },
-  { id: '4', date: '2026-03-03', desc: 'AL6061 정밀가공 50EA', biz: '공방', type: 'CNC가공', amount: 2500000, confirmed: true, counterparty: '(주)테크원' },
+  { id: '1', createdAt: '2026-03-22', date: '2026-03-22', desc: 'SUS304 정밀부품 100EA', biz: '공방', type: 'CNC가공', amount: 5000000, confirmed: false, counterparty: '삼성전자 협력사' },
+  { id: '2', createdAt: '2026-03-12', date: '2026-03-12', desc: 'MDF 레이저커팅 간판', biz: '공방', type: '레이저', amount: 500000, confirmed: true, counterparty: '로컬카페' },
+  { id: '3', createdAt: '2026-03-07', date: '2026-03-07', desc: 'SUS304 브라켓 30EA', biz: '공방', type: 'CNC가공', amount: 1800000, confirmed: true, counterparty: '현대모비스' },
+  { id: '4', createdAt: '2026-03-03', date: '2026-03-03', desc: 'AL6061 정밀가공 50EA', biz: '공방', type: 'CNC가공', amount: 2500000, confirmed: true, counterparty: '(주)테크원' },
 ]
 
 type IncomeItem = typeof DEFAULT_LIST[number]
@@ -54,7 +56,10 @@ type IncomeItem = typeof DEFAULT_LIST[number]
 function loadSavedList(): IncomeItem[] {
   try {
     const saved = localStorage.getItem('storyfarm_income_list')
-    if (saved) return JSON.parse(saved) as IncomeItem[]
+    if (saved) {
+      const parsed = JSON.parse(saved) as Record<string, unknown>[]
+      return parsed.map(i => ({ ...i, createdAt: (i.createdAt as string) || (i.date as string) || today() })) as IncomeItem[]
+    }
   } catch { /* ignore */ }
   return DEFAULT_LIST
 }
@@ -82,7 +87,7 @@ export default function Income() {
   const [filterBiz, setFilterBiz] = useState('전체')
   const [filterType, setFilterType] = useState('전체')
   const [searchWord, setSearchWord] = useState('')
-  const [sortKey, setSortKey] = useState<'date' | 'amount'>('date')
+  const [sortKey, setSortKey] = useState<'createdAt' | 'date' | 'amount'>('createdAt')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [incPage, setIncPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -168,7 +173,7 @@ export default function Income() {
     if (editId) {
       setList(prev => prev.map(i => i.id === editId ? { ...i, ...form, amount: Number(form.amount) } as typeof i : i))
     } else {
-      setList(prev => [{ id: Date.now().toString(), ...form, amount: Number(form.amount), confirmed: false } as typeof DEFAULT_LIST[0], ...prev])
+      setList(prev => [{ id: Date.now().toString(), createdAt: today(), ...form, amount: Number(form.amount), confirmed: false } as typeof DEFAULT_LIST[0], ...prev])
     }
     setModal(false)
   }
@@ -181,6 +186,7 @@ export default function Income() {
   const handleHometaxImport = (items: { date: string; desc: string; counterparty: string; amount: number; type: string; biz: string }[]) => {
     const newItems = items.map(item => ({
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      createdAt: today(),
       date: item.date,
       desc: item.desc,
       biz: item.biz,
@@ -210,6 +216,7 @@ export default function Income() {
           const kv = Object.fromEntries(keys.map((k, i) => [k, vals[i]]))
           return {
             id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+            createdAt: today(),
             date: kv['날짜'] || kv['date'] || vals[0] || '',
             biz: kv['사업구분'] || kv['biz'] || vals[1] || '공방',
             type: kv['유형'] || kv['type'] || vals[2] || '기타',
@@ -236,6 +243,7 @@ export default function Income() {
   // 엑셀/CSV 내보내기
   const handleExport = (format: 'xlsx' | 'csv') => {
     const exportData = list.map(i => ({
+      '작성일': i.createdAt,
       '거래일': i.date,
       '사업구분': i.biz,
       '유형': i.type,
@@ -247,6 +255,7 @@ export default function Income() {
     // 펜션 매출도 포함
     pensionRevenue.filter(r => r.status !== 'cancelled').forEach(r => {
       exportData.push({
+        '작성일': r.created_at ? r.created_at.slice(0, 10) : r.reservation_date,
         '거래일': r.reservation_date,
         '사업구분': '펜션',
         '유형': '객실',
@@ -256,7 +265,7 @@ export default function Income() {
         '입금확인': r.status === 'confirmed' ? 'Y' : 'N',
       })
     })
-    exportData.sort((a, b) => b['거래일'].localeCompare(a['거래일']))
+    exportData.sort((a, b) => b['작성일'].localeCompare(a['작성일']))
 
     const ws = XLSX.utils.json_to_sheet(exportData)
     const wb = XLSX.utils.book_new()
@@ -277,6 +286,7 @@ export default function Income() {
     return true
   }).sort((a, b) => {
     const mul = sortDir === 'asc' ? 1 : -1
+    if (sortKey === 'createdAt') return mul * a.createdAt.localeCompare(b.createdAt)
     if (sortKey === 'date') return mul * a.date.localeCompare(b.date)
     return mul * (a.amount - b.amount)
   })
@@ -284,7 +294,7 @@ export default function Income() {
   const incPaged = filteredList.slice((incPage - 1) * INC_PAGE_SIZE, incPage * INC_PAGE_SIZE)
   const filteredTotal = filteredList.reduce((s, i) => s + i.amount, 0)
 
-  const toggleSort = (key: 'date' | 'amount') => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('desc') } }
+  const toggleSort = (key: 'createdAt' | 'date' | 'amount') => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('desc') } }
   const toggleSelect = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleAll = () => { const ids = incPaged.map(i => i.id); setSelected(prev => ids.every(id => prev.has(id)) ? new Set() : new Set([...prev, ...ids])) }
   const deleteSelected = () => { setList(prev => prev.filter(i => !selected.has(i.id))); setSelected(new Set()) }
@@ -502,6 +512,7 @@ export default function Income() {
             <thead>
               <tr className="border-b-2 border-[#2a2d3a]">
                 <th className="py-2 px-2 w-8"><button onClick={toggleAll} className="text-[#8b8fa3] hover:text-white">{incPaged.length > 0 && incPaged.every(i => selected.has(i.id)) ? <CheckSquare size={14} /> : <Square size={14} />}</button></th>
+                <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium cursor-pointer select-none" onClick={() => toggleSort('createdAt')}><span className="flex items-center gap-1">작성일 <ArrowUpDown size={11} className={sortKey === 'createdAt' ? 'text-[#4CAF50]' : ''} /></span></th>
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium cursor-pointer select-none" onClick={() => toggleSort('date')}><span className="flex items-center gap-1">거래일 <ArrowUpDown size={11} className={sortKey === 'date' ? 'text-[#4CAF50]' : ''} /></span></th>
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">구분</th>
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">유형</th>
@@ -516,6 +527,7 @@ export default function Income() {
               {incPaged.map(item => (
                 <tr key={item.id} className={`border-b border-[#2a2d3a]/50 hover:bg-[#22252f] ${selected.has(item.id) ? 'bg-[#2E7D32]/5' : ''}`}>
                   <td className="py-2 px-2"><button onClick={() => toggleSelect(item.id)} className="text-[#8b8fa3] hover:text-white">{selected.has(item.id) ? <CheckSquare size={14} className="text-[#4CAF50]" /> : <Square size={14} />}</button></td>
+                  <td className="py-2 px-2 text-white tabular-nums">{item.createdAt}</td>
                   <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{item.date}</td>
                   <td className="py-2 px-2"><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2E7D32]/20 text-[#4CAF50]">{item.biz}</span></td>
                   <td className="py-2 px-2"><span className="text-[10px] text-[#8b8fa3]">{item.type}</span></td>
@@ -531,7 +543,7 @@ export default function Income() {
                   </td>
                 </tr>
               ))}
-              {incPaged.length === 0 && <tr><td colSpan={9} className="py-8 text-center text-[#8b8fa3] text-[12px]">검색 결과가 없습니다</td></tr>}
+              {incPaged.length === 0 && <tr><td colSpan={10} className="py-8 text-center text-[#8b8fa3] text-[12px]">검색 결과가 없습니다</td></tr>}
             </tbody>
           </table>
         </div>
