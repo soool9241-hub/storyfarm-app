@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import HometaxImport from '../components/HometaxImport'
 import { krw } from '../lib/format'
@@ -10,6 +10,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 
 interface ReservationRevenue {
   id: number
+  created_at: string
   guest_name: string
   reservation_date: string
   checkout_date: string
@@ -59,7 +60,7 @@ function loadSavedList(): IncomeItem[] {
 }
 
 const FIELDS = [
-  { key: 'date', label: '날짜', type: 'date' as const },
+  { key: 'date', label: '거래일', type: 'date' as const },
   { key: 'biz', label: '사업 구분', type: 'select' as const, options: ['공방', '펜션', '기타'] },
   { key: 'type', label: '수입 유형', type: 'selectOrText' as const, options: ['CNC가공', '레이저', '수업·강의', '장비대여', '객실', '공간대여'] },
   { key: 'amount', label: '금액', type: 'number' as const, placeholder: '0' },
@@ -74,6 +75,18 @@ export default function Income() {
   const [form, setForm] = useState<Record<string, string | number>>({})
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [hometaxOpen, setHometaxOpen] = useState(false)
+
+  // 필터 & 정렬 & 페이지네이션 & 선택
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [filterBiz, setFilterBiz] = useState('전체')
+  const [filterType, setFilterType] = useState('전체')
+  const [searchWord, setSearchWord] = useState('')
+  const [sortKey, setSortKey] = useState<'date' | 'amount'>('date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [incPage, setIncPage] = useState(1)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const INC_PAGE_SIZE = 20
 
   // Supabase 펜션 매출 데이터
   const [pensionRevenue, setPensionRevenue] = useState<ReservationRevenue[]>([])
@@ -91,7 +104,7 @@ export default function Income() {
     setSbError(null)
     try {
       const [revRes, monthRes] = await Promise.all([
-        supabase.from('v_reservation_revenue').select('*').order('reservation_date', { ascending: false }),
+        supabase.from('v_reservation_revenue').select('*').order('created_at', { ascending: false }),
         supabase.from('v_monthly_revenue').select('*').order('reservation_year', { ascending: false }),
       ])
 
@@ -105,11 +118,12 @@ export default function Income() {
       setSbError(msg)
       // 뷰가 아직 없으면 reservations 테이블 직접 시도
       try {
-        const { data, error } = await supabase.from('reservations').select('*').order('reservation_date', { ascending: false })
+        const { data, error } = await supabase.from('reservations').select('*').order('created_at', { ascending: false })
         if (!error && data && data.length > 0) {
           // 클라이언트에서 매출 계산
           const calculated = data.map((r: Record<string, unknown>) => ({
             id: r.id as number,
+            created_at: (r.created_at || '') as string,
             guest_name: (r.guest_name || '') as string,
             reservation_date: (r.reservation_date || '') as string,
             checkout_date: (r.checkout_date || '') as string,
@@ -222,7 +236,7 @@ export default function Income() {
   // 엑셀/CSV 내보내기
   const handleExport = (format: 'xlsx' | 'csv') => {
     const exportData = list.map(i => ({
-      '날짜': i.date,
+      '거래일': i.date,
       '사업구분': i.biz,
       '유형': i.type,
       '금액': i.amount,
@@ -233,7 +247,7 @@ export default function Income() {
     // 펜션 매출도 포함
     pensionRevenue.filter(r => r.status !== 'cancelled').forEach(r => {
       exportData.push({
-        '날짜': r.reservation_date,
+        '거래일': r.reservation_date,
         '사업구분': '펜션',
         '유형': '객실',
         '금액': r.total_revenue,
@@ -242,7 +256,7 @@ export default function Income() {
         '입금확인': r.status === 'confirmed' ? 'Y' : 'N',
       })
     })
-    exportData.sort((a, b) => b['날짜'].localeCompare(a['날짜']))
+    exportData.sort((a, b) => b['거래일'].localeCompare(a['거래일']))
 
     const ws = XLSX.utils.json_to_sheet(exportData)
     const wb = XLSX.utils.book_new()
@@ -250,6 +264,32 @@ export default function Income() {
     const filename = `스토리팜_수입내역_${new Date().toISOString().slice(0, 10)}.${format}`
     XLSX.writeFile(wb, filename)
   }
+
+  // 필터링 + 정렬
+  const BIZ_OPTS = ['전체', '공방', '펜션', '기타']
+  const TYPE_OPTS = ['전체', ...new Set(list.map(i => i.type))]
+  const filteredList = list.filter(i => {
+    if (dateFrom && i.date < dateFrom) return false
+    if (dateTo && i.date > dateTo) return false
+    if (filterBiz !== '전체' && i.biz !== filterBiz) return false
+    if (filterType !== '전체' && i.type !== filterType) return false
+    if (searchWord && !i.desc.includes(searchWord) && !i.counterparty.includes(searchWord) && !i.type.includes(searchWord)) return false
+    return true
+  }).sort((a, b) => {
+    const mul = sortDir === 'asc' ? 1 : -1
+    if (sortKey === 'date') return mul * a.date.localeCompare(b.date)
+    return mul * (a.amount - b.amount)
+  })
+  const incTotalPages = Math.max(1, Math.ceil(filteredList.length / INC_PAGE_SIZE))
+  const incPaged = filteredList.slice((incPage - 1) * INC_PAGE_SIZE, incPage * INC_PAGE_SIZE)
+  const filteredTotal = filteredList.reduce((s, i) => s + i.amount, 0)
+
+  const toggleSort = (key: 'date' | 'amount') => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('desc') } }
+  const toggleSelect = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleAll = () => { const ids = incPaged.map(i => i.id); setSelected(prev => ids.every(id => prev.has(id)) ? new Set() : new Set([...prev, ...ids])) }
+  const deleteSelected = () => { setList(prev => prev.filter(i => !selected.has(i.id))); setSelected(new Set()) }
+  const clearFilters = () => { setDateFrom(''); setDateTo(''); setFilterBiz('전체'); setFilterType('전체'); setSearchWord(''); setIncPage(1) }
+  const hasFilters = dateFrom || dateTo || filterBiz !== '전체' || filterType !== '전체' || searchWord
 
   // 차트 데이터 계산
   const pensionTotal = pensionRevenue
@@ -370,6 +410,7 @@ export default function Income() {
             <table className="w-full text-[12px] min-w-[700px]">
               <thead>
                 <tr className="border-b-2 border-[#2a2d3a]">
+                  <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">생성일</th>
                   <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">예약일</th>
                   <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">고객명</th>
                   <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">인원</th>
@@ -386,6 +427,7 @@ export default function Income() {
               <tbody>
                 {pensionRevenue.map(r => (
                   <tr key={r.id} className={`border-b border-[#2a2d3a]/50 hover:bg-[#22252f] ${r.status === 'cancelled' ? 'opacity-40 line-through' : ''}`}>
+                    <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{r.created_at ? r.created_at.slice(0, 10) : '-'}</td>
                     <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{r.reservation_date}</td>
                     <td className="py-2 px-2">{r.guest_name || '-'}</td>
                     <td className="py-2 px-2 text-center">{r.guest_count}명</td>
@@ -422,37 +464,65 @@ export default function Income() {
         ) : null}
       </div>
 
-      {/* 공방 수입 목록 */}
-      <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#2a2d3a]">
-          <h3 className="text-sm font-semibold">공방 수입 내역 <span className="text-[#8b8fa3] font-normal text-[11px]">({list.length}건)</span></h3>
+      {/* 검색 필터 바 */}
+      <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <span className="text-[#8b8fa3] shrink-0">기간</span>
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setIncPage(1) }} className="bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#2E7D32] w-[130px] [color-scheme:dark]" />
+            <span className="text-[#8b8fa3]">~</span>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setIncPage(1) }} className="bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#2E7D32] w-[130px] [color-scheme:dark]" />
+          </div>
+          <select value={filterBiz} onChange={e => { setFilterBiz(e.target.value); setIncPage(1) }} className="bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#2E7D32]">{BIZ_OPTS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <select value={filterType} onChange={e => { setFilterType(e.target.value); setIncPage(1) }} className="bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#2E7D32]">{TYPE_OPTS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <div className="relative flex-1 min-w-[120px]">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8b8fa3]" />
+            <input value={searchWord} onChange={e => { setSearchWord(e.target.value); setIncPage(1) }} placeholder="검색어" className="bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#2E7D32] w-full pl-7" />
+          </div>
+          {hasFilters && <button onClick={clearFilters} className="text-[10px] text-[#e74c3c] hover:text-white flex items-center gap-0.5"><X size={12} /> 초기화</button>}
         </div>
+      </div>
+
+      {/* 합계 요약 바 */}
+      <div className="flex items-center justify-between bg-[#1a1d27] border border-[#2a2d3a] rounded-xl px-4 py-2.5">
+        <span className="text-[11px] text-[#8b8fa3]">
+          검색결과 <span className="text-white font-medium">{filteredList.length}</span>건
+          {selected.size > 0 && <span className="ml-2 text-[#3498db]">({selected.size}건 선택)</span>}
+        </span>
+        <div className="flex items-center gap-3">
+          {selected.size > 0 && <button onClick={deleteSelected} className="text-[11px] text-[#e74c3c] hover:text-white flex items-center gap-1"><Trash2 size={12} /> 선택 삭제</button>}
+          <span className="text-[12px] font-medium">합계 <span className="text-[#4CAF50]">{krw(filteredTotal)}</span></span>
+        </div>
+      </div>
+
+      {/* 수입 목록 테이블 */}
+      <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
         <div className="overflow-x-auto">
-          <table className="w-full text-[12px] min-w-[650px]">
+          <table className="w-full text-[12px] min-w-[700px]">
             <thead>
               <tr className="border-b-2 border-[#2a2d3a]">
-                <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">날짜</th>
+                <th className="py-2 px-2 w-8"><button onClick={toggleAll} className="text-[#8b8fa3] hover:text-white">{incPaged.length > 0 && incPaged.every(i => selected.has(i.id)) ? <CheckSquare size={14} /> : <Square size={14} />}</button></th>
+                <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium cursor-pointer select-none" onClick={() => toggleSort('date')}><span className="flex items-center gap-1">거래일 <ArrowUpDown size={11} className={sortKey === 'date' ? 'text-[#4CAF50]' : ''} /></span></th>
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">구분</th>
+                <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">유형</th>
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">내용</th>
                 <th className="text-left py-2 px-2 text-[#8b8fa3] font-medium">거래처</th>
-                <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium">금액</th>
+                <th className="text-right py-2 px-2 text-[#8b8fa3] font-medium cursor-pointer select-none" onClick={() => toggleSort('amount')}><span className="flex items-center justify-end gap-1">금액 <ArrowUpDown size={11} className={sortKey === 'amount' ? 'text-[#4CAF50]' : ''} /></span></th>
                 <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">입금</th>
                 <th className="text-center py-2 px-2 text-[#8b8fa3] font-medium">관리</th>
               </tr>
             </thead>
             <tbody>
-              {list.map(item => (
-                <tr key={item.id} className="border-b border-[#2a2d3a]/50 hover:bg-[#22252f]">
+              {incPaged.map(item => (
+                <tr key={item.id} className={`border-b border-[#2a2d3a]/50 hover:bg-[#22252f] ${selected.has(item.id) ? 'bg-[#2E7D32]/5' : ''}`}>
+                  <td className="py-2 px-2"><button onClick={() => toggleSelect(item.id)} className="text-[#8b8fa3] hover:text-white">{selected.has(item.id) ? <CheckSquare size={14} className="text-[#4CAF50]" /> : <Square size={14} />}</button></td>
                   <td className="py-2 px-2 text-[#8b8fa3] tabular-nums">{item.date}</td>
-                  <td className="py-2 px-2">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2E7D32]/20 text-[#4CAF50]">{item.biz}</span>
-                  </td>
-                  <td className="py-2 px-2">{item.desc}</td>
-                  <td className="py-2 px-2 text-[#8b8fa3]">{item.counterparty}</td>
+                  <td className="py-2 px-2"><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2E7D32]/20 text-[#4CAF50]">{item.biz}</span></td>
+                  <td className="py-2 px-2"><span className="text-[10px] text-[#8b8fa3]">{item.type}</span></td>
+                  <td className="py-2 px-2 max-w-[160px] truncate">{item.desc}</td>
+                  <td className="py-2 px-2 text-[#8b8fa3] max-w-[100px] truncate">{item.counterparty}</td>
                   <td className="py-2 px-2 text-right text-[#4CAF50] tabular-nums font-medium">{krw(item.amount)}</td>
-                  <td className="py-2 px-2 text-center">
-                    {item.confirmed ? <span className="text-[#4CAF50]">✓</span> : <span className="text-[#f1c40f]">미수</span>}
-                  </td>
+                  <td className="py-2 px-2 text-center">{item.confirmed ? <span className="text-[#4CAF50]">✓</span> : <span className="text-[#f1c40f]">미수</span>}</td>
                   <td className="py-2 px-2 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button onClick={() => openEdit(item)} className="p-1 text-[#8b8fa3] hover:text-[#3498db] transition-colors" title="수정"><Pencil size={13} /></button>
@@ -461,9 +531,19 @@ export default function Income() {
                   </td>
                 </tr>
               ))}
+              {incPaged.length === 0 && <tr><td colSpan={9} className="py-8 text-center text-[#8b8fa3] text-[12px]">검색 결과가 없습니다</td></tr>}
             </tbody>
           </table>
         </div>
+        {incTotalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t border-[#2a2d3a]">
+            <button onClick={() => setIncPage(p => Math.max(1, p - 1))} disabled={incPage === 1} className="p-1 text-[#8b8fa3] hover:text-white disabled:opacity-30"><ChevronLeft size={16} /></button>
+            {Array.from({ length: incTotalPages }, (_, i) => i + 1).slice(Math.max(0, incPage - 3), incPage + 2).map(p => (
+              <button key={p} onClick={() => setIncPage(p)} className={`w-7 h-7 rounded text-[11px] ${p === incPage ? 'bg-[#2E7D32] text-white' : 'text-[#8b8fa3] hover:text-white'}`}>{p}</button>
+            ))}
+            <button onClick={() => setIncPage(p => Math.min(incTotalPages, p + 1))} disabled={incPage === incTotalPages} className="p-1 text-[#8b8fa3] hover:text-white disabled:opacity-30"><ChevronRight size={16} /></button>
+          </div>
+        )}
       </div>
 
       <CrudModal open={modal} title={editId ? '수입 수정' : '수입 등록'} fields={FIELDS} values={form} onChange={(k, v) => setForm(p => ({ ...p, [k]: v }))} onSave={save} onClose={() => setModal(false)} />
