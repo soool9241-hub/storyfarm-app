@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, CalendarDays, BarChart3, Trophy, Crown, Medal } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, CalendarDays, BarChart3, Trophy, Crown, Medal, Link2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import HometaxImport from '../components/HometaxImport'
 import { krw } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import LinkImport from '../components/LinkImport'
 
 interface ReservationRevenue {
   id: number
@@ -75,6 +76,7 @@ export default function Income() {
   const [form, setForm] = useState<Record<string, string | number>>({})
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [hometaxOpen, setHometaxOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
 
   // 보기 모드: 월별 / 연도별 / 총누적
   type ViewMode = 'monthly' | 'yearly' | 'total'
@@ -198,6 +200,30 @@ export default function Income() {
       counterparty: item.counterparty,
     }))
     setList(prev => [...newItems, ...prev])
+  }
+
+  // 링크 가져오기
+  const handleLinkImport = (rows: Record<string, string>[]) => {
+    const items: IncomeItem[] = rows.map(row => {
+      const vals = Object.values(row)
+      const keys = Object.keys(row)
+      const kv = Object.fromEntries(keys.map((k, i) => [k, vals[i]]))
+      return {
+        id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+        createdAt: today(),
+        date: kv['날짜'] || kv['거래일'] || kv['date'] || vals[0] || today(),
+        biz: kv['사업구분'] || kv['구분'] || kv['biz'] || vals[1] || '공방',
+        type: kv['유형'] || kv['type'] || vals[2] || '기타',
+        amount: Math.round(Number(String(kv['금액'] || kv['amount'] || vals[3] || '0').replace(/[^\d.-]/g, ''))) || 0,
+        counterparty: kv['거래처'] || kv['counterparty'] || vals[4] || '',
+        desc: kv['내용'] || kv['설명'] || kv['desc'] || vals[5] || '',
+        confirmed: false,
+      }
+    }).filter(i => i.amount > 0)
+    if (items.length > 0) {
+      setList(prev => [...items, ...prev])
+      alert(`${items.length}건 가져왔습니다.`)
+    }
   }
 
   // CSV 업로드
@@ -361,6 +387,9 @@ export default function Income() {
         <h2 className="text-lg font-bold">수입 관리</h2>
         <div className="flex gap-2 flex-wrap">
           <input ref={csvRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCsvUpload} />
+          <button onClick={() => setLinkOpen(true)} className="flex items-center gap-1.5 bg-[#1abc9c] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#16a085] transition-colors">
+            <Link2 size={16} /> 링크
+          </button>
           <button onClick={() => setHometaxOpen(true)} className="flex items-center gap-1.5 bg-[#3498db] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#2980b9] transition-colors">
             <FileSpreadsheet size={16} /> 홈택스
           </button>
@@ -659,6 +688,7 @@ export default function Income() {
       <CrudModal open={modal} title={editId ? '수입 수정' : '수입 등록'} fields={FIELDS} values={form} onChange={(k, v) => setForm(p => ({ ...p, [k]: v }))} onSave={save} onClose={() => setModal(false)} />
       <ConfirmDialog open={!!deleteId} message="이 수입 내역을 삭제하시겠습니까?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} />
       <HometaxImport open={hometaxOpen} onClose={() => setHometaxOpen(false)} onImport={handleHometaxImport} />
+      <LinkImport open={linkOpen} onClose={() => setLinkOpen(false)} onImport={handleLinkImport} title="수입 데이터 링크 가져오기" />
     </div>
   )
 }

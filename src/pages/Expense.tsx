@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Camera, MessageSquare, Pencil, Trash2, Image, Search, Upload, Download, ChevronLeft, ChevronRight, ArrowUpDown, CheckSquare, Square, X } from 'lucide-react'
+import { Plus, Camera, MessageSquare, Pencil, Trash2, Image, Search, Upload, Download, ChevronLeft, ChevronRight, ArrowUpDown, CheckSquare, Square, X, Link2 } from 'lucide-react'
 import { krw } from '../lib/format'
 import * as XLSX from 'xlsx'
 import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import LinkImport from '../components/LinkImport'
 
 type ExpenseItem = {
   id: string; date: string; category: string; desc: string; amount: number; method: string; biz: string
@@ -55,6 +56,7 @@ export default function Expense() {
   const [scanModal, setScanModal] = useState(false)
   const [smsModal, setSmsModal] = useState(false)
   const [smsText, setSmsText] = useState('')
+  const [linkOpen, setLinkOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const csvRef = useRef<HTMLInputElement>(null)
 
@@ -122,6 +124,28 @@ export default function Expense() {
     setEditId(null); setForm({ date: dt, category: '기타', amount: amt, method, desc: dM ? dM[1] : '(문자 파싱)', biz: '공방' }); setSmsModal(false); setSmsText(''); setModal(true)
   }
 
+  // 링크 가져오기
+  const handleLinkImport = (rows: Record<string, string>[]) => {
+    const items: ExpenseItem[] = rows.map(row => {
+      const vals = Object.values(row)
+      const keys = Object.keys(row)
+      const kv = Object.fromEntries(keys.map((k, i) => [k, vals[i]]))
+      return {
+        id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+        date: kv['날짜'] || kv['거래일'] || kv['date'] || vals[0] || new Date().toISOString().slice(0, 10),
+        category: kv['카테고리'] || kv['분류'] || kv['category'] || vals[1] || '기타',
+        desc: kv['내용'] || kv['설명'] || kv['desc'] || vals[2] || '',
+        amount: Math.round(Number(String(kv['금액'] || kv['amount'] || vals[3] || '0').replace(/[^\d.-]/g, ''))) || 0,
+        method: kv['결제수단'] || kv['method'] || vals[4] || '기타',
+        biz: kv['사업구분'] || kv['biz'] || vals[5] || '공통',
+      }
+    }).filter(i => i.amount > 0)
+    if (items.length > 0) {
+      setList(prev => [...items, ...prev])
+      alert(`${items.length}건 가져왔습니다.`)
+    }
+  }
+
   // CSV 업로드
   const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
@@ -160,6 +184,7 @@ export default function Expense() {
         <div className="flex gap-2 flex-wrap">
           <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleReceiptScan} />
           <input ref={csvRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCsvUpload} />
+          <button onClick={() => setLinkOpen(true)} className="flex items-center gap-1 bg-[#1abc9c] text-white px-2.5 py-1.5 rounded-lg text-[11px] font-medium hover:bg-[#16a085]"><Link2 size={14} /> 링크</button>
           <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 bg-[#3498db] text-white px-2.5 py-1.5 rounded-lg text-[11px] font-medium hover:bg-[#2980b9]"><Camera size={14} /> 영수증</button>
           <button onClick={() => setSmsModal(true)} className="flex items-center gap-1 bg-[#9b59b6] text-white px-2.5 py-1.5 rounded-lg text-[11px] font-medium hover:bg-[#8e44ad]"><MessageSquare size={14} /> 문자</button>
           <button onClick={() => csvRef.current?.click()} className="flex items-center gap-1 bg-[#e67e22] text-white px-2.5 py-1.5 rounded-lg text-[11px] font-medium hover:bg-[#d35400]"><Upload size={14} /> 업로드</button>
@@ -312,6 +337,7 @@ export default function Expense() {
 
       <CrudModal open={modal} title={editId ? '지출 수정' : '지출 등록'} fields={FIELDS} values={form} onChange={(k, v) => setForm(p => ({ ...p, [k]: v }))} onSave={save} onClose={() => setModal(false)} />
       <ConfirmDialog open={!!deleteId} message="이 지출 내역을 삭제하시겠습니까?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} />
+      <LinkImport open={linkOpen} onClose={() => setLinkOpen(false)} onImport={handleLinkImport} title="지출 데이터 링크 가져오기" />
     </div>
   )
 }
