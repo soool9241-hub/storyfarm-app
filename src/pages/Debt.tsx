@@ -143,6 +143,22 @@ export default function Debt() {
   const totalDebt = debts.reduce((s, d) => s + d.balance, 0)
   const totalMonthly = debts.reduce((s, d) => s + d.monthly, 0)
   const totalInterest = debts.reduce((s, d) => s + Math.round(d.balance * d.rate / 100 / 12), 0)
+  // 상환율 = 상환된 금액 / (상환된 금액 + 잔액) 추정
+  const totalPaidEstimate = debts.reduce((s, d) => {
+    if (!d.dueDate) return s
+    const dueMs = new Date(d.dueDate).getTime()
+    const nowMs = Date.now()
+    // 만기까지 남은 개월
+    const remainMonths = Math.max(0, (dueMs - nowMs) / (30.44 * 86400000))
+    // 전체 대출 기간 추정: 잔액 / (월상환 - 월이자) 로 역산
+    const monthlyInt = d.balance * d.rate / 100 / 12
+    const principal = d.monthly - monthlyInt
+    if (principal <= 0) return s
+    const totalMonths = d.balance / principal + remainMonths
+    const paidMonths = totalMonths - remainMonths
+    return s + d.monthly * Math.max(0, paidMonths)
+  }, 0)
+  const repaymentRate = totalDebt > 0 ? Math.min(100, Math.max(0, (totalPaidEstimate / (totalPaidEstimate + totalDebt)) * 100)) : 0
 
   return (
     <div className="space-y-5">
@@ -163,7 +179,7 @@ export default function Debt() {
       </div>
 
       {/* 요약 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 text-center">
           <div className="text-[11px] text-[#8b8fa3] mb-1">총 채무 잔액</div>
           <div className="text-xl font-bold text-[#e74c3c]">{krw(totalDebt)}</div>
@@ -176,12 +192,29 @@ export default function Debt() {
           <div className="text-[11px] text-[#8b8fa3] mb-1">월 이자 부담</div>
           <div className="text-xl font-bold text-[#e67e22]">{krw(totalInterest)}</div>
         </div>
+        <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 text-center">
+          <div className="text-[11px] text-[#8b8fa3] mb-1">상환율</div>
+          <div className="text-xl font-bold text-[#4CAF50]">{repaymentRate.toFixed(1)}%</div>
+          <div className="mt-2 h-2 bg-[#0f1117] rounded-full overflow-hidden">
+            <div className="h-full bg-[#4CAF50] rounded-full transition-all duration-500" style={{ width: `${repaymentRate}%` }} />
+          </div>
+        </div>
       </div>
 
       {/* 채무 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {debts.map(d => {
           const monthlyInterest = Math.round(d.balance * d.rate / 100 / 12)
+          const principal = d.monthly - monthlyInterest
+          // 개별 상환율 계산
+          let debtRepayRate = 0
+          if (d.dueDate && principal > 0) {
+            const remainMonths = Math.max(0, (new Date(d.dueDate).getTime() - Date.now()) / (30.44 * 86400000))
+            const totalMonths = d.balance / principal + remainMonths
+            const paidMonths = totalMonths - remainMonths
+            const paidAmount = d.monthly * Math.max(0, paidMonths)
+            debtRepayRate = Math.min(100, Math.max(0, (paidAmount / (paidAmount + d.balance)) * 100))
+          }
           return (
             <div key={d.id} className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 hover:border-[#2E7D32] transition-colors">
               <div className="flex items-center justify-between mb-3">
@@ -195,15 +228,26 @@ export default function Debt() {
                   <button onClick={() => setDeleteId(d.id)} className="p-1 text-[#8b8fa3] hover:text-[#e74c3c] transition-colors" title="삭제"><Trash2 size={13} /></button>
                 </div>
               </div>
-              <div className="text-2xl font-bold text-[#e74c3c] mb-3 tabular-nums">{krw(d.balance)}</div>
+              <div className="text-2xl font-bold text-[#e74c3c] mb-1 tabular-nums">{krw(d.balance)}</div>
+              {d.dueDate && (
+                <div className="mb-3">
+                  <div className="flex justify-between text-[10px] mb-1">
+                    <span className="text-[#8b8fa3]">상환율</span>
+                    <span className="text-[#4CAF50] font-medium">{debtRepayRate.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-1.5 bg-[#0f1117] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${debtRepayRate}%`, backgroundColor: debtRepayRate >= 70 ? '#4CAF50' : debtRepayRate >= 40 ? '#f1c40f' : '#e74c3c' }} />
+                  </div>
+                </div>
+              )}
               <div className="space-y-1.5 text-[12px]">
                 <div className="flex justify-between">
                   <span className="text-[#8b8fa3]">월 상환</span>
-                  <span>{krw(d.monthly)}</span>
+                  <span className="tabular-nums">{krw(d.monthly)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#8b8fa3]">월 이자</span>
-                  <span className="text-[#e67e22]">{krw(monthlyInterest)}</span>
+                  <span className="text-[#e67e22] tabular-nums">{krw(monthlyInterest)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#8b8fa3]">납부일</span>
