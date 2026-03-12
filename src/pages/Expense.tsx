@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
-import { Plus, Camera, MessageSquare, Pencil, Trash2, Image, Search, Upload, Download, ChevronLeft, ChevronRight, ArrowUpDown, CheckSquare, Square, X, Link2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Plus, Camera, MessageSquare, Pencil, Trash2, Image, Search, Upload, Download, ChevronLeft, ChevronRight, ArrowUpDown, CheckSquare, Square, X, Link2, Cloud, CloudOff } from 'lucide-react'
 import { krw } from '../lib/format'
 import * as XLSX from 'xlsx'
 import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import LinkImport from '../components/LinkImport'
+import { useCloudList } from '../hooks/useCloudList'
 
 type ExpenseItem = {
   id: string; date: string; category: string; desc: string; amount: number; method: string; biz: string
@@ -47,7 +48,7 @@ const FIELDS = [
 ]
 
 export default function Expense() {
-  const [list, setList] = useState(loadSaved)
+  const [list, setList, cloudSyncing] = useCloudList<ExpenseItem>('expenses', 'storyfarm_expense_list', loadSaved)
   const [modal, setModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<Record<string, string | number>>({})
@@ -72,7 +73,7 @@ export default function Expense() {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  useEffect(() => { localStorage.setItem('storyfarm_expense_list', JSON.stringify(list)) }, [list])
+  // (localStorage + Supabase 동기화는 useCloudList에서 처리)
 
   // 필터링 + 정렬
   const filtered = list.filter(i => {
@@ -180,7 +181,9 @@ export default function Expense() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-lg font-bold">지출 관리</h2>
+        <h2 className="text-lg font-bold flex items-center gap-2">지출 관리
+          {cloudSyncing ? <CloudOff size={14} className="text-yellow-500 animate-pulse" /> : <Cloud size={14} className="text-green-400" />}
+        </h2>
         <div className="flex gap-2 flex-wrap">
           <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleReceiptScan} />
           <input ref={csvRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCsvUpload} />

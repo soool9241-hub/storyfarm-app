@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, CalendarDays, BarChart3, Trophy, Crown, Medal, Link2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Database, Lock, FileSpreadsheet, Upload, Download, Search, ArrowUpDown, CheckSquare, Square, ChevronLeft, ChevronRight, X, Calendar, CalendarDays, BarChart3, Trophy, Crown, Medal, Link2, Cloud, CloudOff } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import HometaxImport from '../components/HometaxImport'
 import { krw } from '../lib/format'
@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase'
 import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import LinkImport from '../components/LinkImport'
+import { useCloudList } from '../hooks/useCloudList'
 
 interface ReservationRevenue {
   id: number
@@ -70,7 +71,7 @@ const FIELDS = [
 ]
 
 export default function Income() {
-  const [list, setList] = useState(loadSavedList)
+  const [list, setList, cloudSyncing] = useCloudList<IncomeItem>('income', 'storyfarm_income_list', loadSavedList)
   const [modal, setModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<Record<string, string | number>>({})
@@ -103,10 +104,7 @@ export default function Income() {
   const [loading, setLoading] = useState(false)
   const [sbError, setSbError] = useState<string | null>(null)
 
-  // 수기 등록 데이터 localStorage 저장
-  useEffect(() => {
-    localStorage.setItem('storyfarm_income_list', JSON.stringify(list))
-  }, [list])
+  // (localStorage + Supabase 동기화는 useCloudList에서 처리)
 
   const fetchPensionData = async () => {
     setLoading(true)
@@ -384,7 +382,9 @@ export default function Income() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">수입 관리</h2>
+        <h2 className="text-lg font-bold flex items-center gap-2">수입 관리
+          {cloudSyncing ? <CloudOff size={14} className="text-yellow-500 animate-pulse" /> : <Cloud size={14} className="text-green-400" />}
+        </h2>
         <div className="flex gap-2 flex-wrap">
           <input ref={csvRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCsvUpload} />
           <button onClick={() => setLinkOpen(true)} className="flex items-center gap-1.5 bg-[#1abc9c] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#16a085] transition-colors">

@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { AlertTriangle, Calculator, Plus, Pencil, Trash2, Upload, Download, Camera, Loader2, Image, X } from 'lucide-react'
+import { AlertTriangle, Calculator, Plus, Pencil, Trash2, Upload, Download, Camera, Loader2, Image, X, Cloud, CloudOff } from 'lucide-react'
 import { krw } from '../lib/format'
 import * as XLSX from 'xlsx'
 import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { useCloudList } from '../hooks/useCloudList'
 
 type DebtItem = {
   id: string; name: string; totalLoan: number; paidAmount: number; balance: number; rate: number; monthly: number;
@@ -69,7 +70,7 @@ function dDayColor(dateStr: string | null): string {
 }
 
 export default function Debt() {
-  const [debts, setDebts] = useState(loadSavedDebts)
+  const [debts, setDebts, cloudSyncing] = useCloudList<DebtItem>('debts', 'storyfarm_debt_list', loadSavedDebts)
   const [modal, setModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<Record<string, string | number>>({})
@@ -82,10 +83,7 @@ export default function Debt() {
   const [scanResult, setScanResult] = useState<Record<string, string | number> | null>(null)
   const [scanError, setScanError] = useState('')
 
-  // localStorage 저장
-  useEffect(() => {
-    localStorage.setItem('storyfarm_debt_list', JSON.stringify(debts))
-  }, [debts])
+  // (localStorage + Supabase 동기화는 useCloudList에서 처리)
 
   const openAdd = () => { setEditId(null); setForm({ name: '', type: '대출', totalLoan: 0, rate: 0, paidAmount: 0, balance: 0, monthly: 0, payDay: 1, dueDate: '' }); setModal(true) }
   const openEdit = (d: DebtItem) => { setEditId(d.id); setForm({ name: d.name, type: d.type, totalLoan: d.totalLoan, rate: d.rate, paidAmount: d.paidAmount, balance: d.balance, monthly: d.monthly, payDay: d.payDay, dueDate: d.dueDate || '' }); setModal(true) }
@@ -291,7 +289,9 @@ JSON만 응답하세요. 다른 텍스트 없이.` }
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-lg font-bold">대출·채무 관리</h2>
+        <h2 className="text-lg font-bold flex items-center gap-2">대출·채무 관리
+          {cloudSyncing ? <CloudOff size={14} className="text-yellow-500 animate-pulse" /> : <Cloud size={14} className="text-green-400" />}
+        </h2>
         <div className="flex gap-2 flex-wrap">
           <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileUpload} />
           <input ref={scanRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanPhoto} />
