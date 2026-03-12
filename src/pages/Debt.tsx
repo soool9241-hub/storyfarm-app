@@ -7,20 +7,27 @@ import CrudModal from '../components/CrudModal'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 type DebtItem = {
-  id: string; name: string; balance: number; rate: number; monthly: number;
+  id: string; name: string; totalLoan: number; paidAmount: number; balance: number; rate: number; monthly: number;
   payDay: number; dueDate: string; lastPaid: string; lastAmount: number; type: string
 }
 
 const DEFAULT_DEBTS: DebtItem[] = [
-  { id: '1', name: 'OK저축은행', balance: 9050535, rate: 17.2, monthly: 721162, payDay: 9, dueDate: '2027-03-09', lastPaid: '2026-03-09', lastAmount: 721162, type: '대출' },
-  { id: '2', name: '카드론', balance: 3000000, rate: 19.5, monthly: 250000, payDay: 25, dueDate: '', lastPaid: '', lastAmount: 0, type: '카드론' },
-  { id: '3', name: '국민은행 일시상환', balance: 10000000, rate: 4.5, monthly: 37500, payDay: 15, dueDate: '2026-09-15', lastPaid: '2026-03-15', lastAmount: 37500, type: '대출' },
+  { id: '1', name: 'OK저축은행', totalLoan: 15000000, paidAmount: 5949465, balance: 9050535, rate: 17.2, monthly: 721162, payDay: 9, dueDate: '2027-03-09', lastPaid: '2026-03-09', lastAmount: 721162, type: '대출' },
+  { id: '2', name: '카드론', totalLoan: 3000000, paidAmount: 0, balance: 3000000, rate: 19.5, monthly: 250000, payDay: 25, dueDate: '', lastPaid: '', lastAmount: 0, type: '카드론' },
+  { id: '3', name: '국민은행 일시상환', totalLoan: 10000000, paidAmount: 0, balance: 10000000, rate: 4.5, monthly: 37500, payDay: 15, dueDate: '2026-09-15', lastPaid: '2026-03-15', lastAmount: 37500, type: '대출' },
 ]
 
 function loadSavedDebts(): DebtItem[] {
   try {
     const saved = localStorage.getItem('storyfarm_debt_list')
-    if (saved) return JSON.parse(saved) as DebtItem[]
+    if (saved) {
+      const parsed = JSON.parse(saved) as Record<string, unknown>[]
+      return parsed.map(d => ({
+        ...d,
+        totalLoan: (d.totalLoan as number) || (d.balance as number) || 0,
+        paidAmount: (d.paidAmount as number) || 0,
+      })) as DebtItem[]
+    }
   } catch { /* ignore */ }
   return DEFAULT_DEBTS
 }
@@ -28,8 +35,10 @@ function loadSavedDebts(): DebtItem[] {
 const DEBT_FIELDS = [
   { key: 'name', label: '채무명', type: 'text' as const, placeholder: '예: OK저축은행' },
   { key: 'type', label: '유형', type: 'select' as const, options: ['대출', '카드론', '개인', '기타'] },
-  { key: 'balance', label: '잔액', type: 'number' as const, placeholder: '0' },
+  { key: 'totalLoan', label: '총 대출금', type: 'number' as const, placeholder: '0' },
   { key: 'rate', label: '연이율 (%)', type: 'number' as const, placeholder: '0' },
+  { key: 'paidAmount', label: '갚은 금액', type: 'number' as const, placeholder: '0' },
+  { key: 'balance', label: '잔액 (자동계산)', type: 'number' as const, placeholder: '자동계산', readOnly: true },
   { key: 'monthly', label: '월 상환액', type: 'number' as const, placeholder: '0' },
   { key: 'payDay', label: '납부일 (1~31)', type: 'number' as const, placeholder: '1' },
   { key: 'dueDate', label: '만기일', type: 'date' as const },
@@ -72,11 +81,28 @@ export default function Debt() {
     localStorage.setItem('storyfarm_debt_list', JSON.stringify(debts))
   }, [debts])
 
-  const openAdd = () => { setEditId(null); setForm({ name: '', type: '대출', balance: 0, rate: 0, monthly: 0, payDay: 1, dueDate: '' }); setModal(true) }
-  const openEdit = (d: DebtItem) => { setEditId(d.id); setForm({ name: d.name, type: d.type, balance: d.balance, rate: d.rate, monthly: d.monthly, payDay: d.payDay, dueDate: d.dueDate || '' }); setModal(true) }
+  const openAdd = () => { setEditId(null); setForm({ name: '', type: '대출', totalLoan: 0, rate: 0, paidAmount: 0, balance: 0, monthly: 0, payDay: 1, dueDate: '' }); setModal(true) }
+  const openEdit = (d: DebtItem) => { setEditId(d.id); setForm({ name: d.name, type: d.type, totalLoan: d.totalLoan, rate: d.rate, paidAmount: d.paidAmount, balance: d.balance, monthly: d.monthly, payDay: d.payDay, dueDate: d.dueDate || '' }); setModal(true) }
+
+  // 총 대출금/갚은돈 변경시 잔액 자동 계산
+  const handleFormChange = (key: string, value: string | number) => {
+    setForm(prev => {
+      const next = { ...prev, [key]: value }
+      if (key === 'totalLoan' || key === 'paidAmount') {
+        const total = Number(next.totalLoan) || 0
+        const paid = Number(next.paidAmount) || 0
+        next.balance = Math.max(0, total - paid)
+      }
+      return next
+    })
+  }
+
   const save = () => {
-    if (editId) { setDebts(prev => prev.map(d => d.id === editId ? { ...d, ...form, balance: Number(form.balance), rate: Number(form.rate), monthly: Number(form.monthly), payDay: Number(form.payDay) } as DebtItem : d)) }
-    else { setDebts(prev => [...prev, { id: Date.now().toString(), ...form, balance: Number(form.balance), rate: Number(form.rate), monthly: Number(form.monthly), payDay: Number(form.payDay), lastPaid: '', lastAmount: 0 } as DebtItem]) }
+    const totalLoan = Number(form.totalLoan) || 0
+    const paidAmount = Number(form.paidAmount) || 0
+    const balance = Math.max(0, totalLoan - paidAmount)
+    if (editId) { setDebts(prev => prev.map(d => d.id === editId ? { ...d, ...form, totalLoan, paidAmount, balance, rate: Number(form.rate), monthly: Number(form.monthly), payDay: Number(form.payDay) } as DebtItem : d)) }
+    else { setDebts(prev => [...prev, { id: Date.now().toString(), ...form, totalLoan, paidAmount, balance, rate: Number(form.rate), monthly: Number(form.monthly), payDay: Number(form.payDay), lastPaid: '', lastAmount: 0 } as DebtItem]) }
     setModal(false)
   }
   const confirmDelete = () => { if (deleteId) setDebts(prev => prev.filter(d => d.id !== deleteId)); setDeleteId(null) }
@@ -94,11 +120,16 @@ export default function Debt() {
         const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' })
         const imported: DebtItem[] = rows.map(row => {
           const kv = Object.fromEntries(Object.entries(row).map(([k, v]) => [k.trim(), String(v ?? '').trim()]))
+          const balance = parseNum(kv['잔액'] || kv['balance'] || kv['대출잔액'] || '0')
+          const totalLoan = parseNum(kv['총대출금'] || kv['대출금'] || kv['totalLoan'] || '0') || balance
+          const paidAmount = parseNum(kv['갚은금액'] || kv['상환액'] || kv['paidAmount'] || '0')
           return {
             id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
             name: kv['채무명'] || kv['name'] || kv['대출명'] || '',
             type: kv['유형'] || kv['type'] || '대출',
-            balance: parseNum(kv['잔액'] || kv['balance'] || kv['대출잔액'] || '0'),
+            totalLoan,
+            paidAmount,
+            balance,
             rate: parseFloat(kv['연이율'] || kv['이율'] || kv['rate'] || '0') || 0,
             monthly: parseNum(kv['월상환액'] || kv['월상환'] || kv['monthly'] || '0'),
             payDay: parseInt(kv['납부일'] || kv['payDay'] || '1') || 1,
@@ -241,6 +272,18 @@ export default function Debt() {
                 </div>
               )}
               <div className="space-y-1.5 text-[12px]">
+                {d.totalLoan > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#8b8fa3]">총 대출금</span>
+                    <span className="tabular-nums">{krw(d.totalLoan)}</span>
+                  </div>
+                )}
+                {d.paidAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#8b8fa3]">갚은 금액</span>
+                    <span className="text-[#4CAF50] tabular-nums">{krw(d.paidAmount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-[#8b8fa3]">월 상환</span>
                   <span className="tabular-nums">{krw(d.monthly)}</span>
@@ -309,7 +352,7 @@ export default function Debt() {
           </ResponsiveContainer>
         </div>
       </div>
-      <CrudModal open={modal} title={editId ? '채무 수정' : '채무 등록'} fields={DEBT_FIELDS} values={form} onChange={(k, v) => setForm(p => ({ ...p, [k]: v }))} onSave={save} onClose={() => setModal(false)} />
+      <CrudModal open={modal} title={editId ? '채무 수정' : '채무 등록'} fields={DEBT_FIELDS} values={form} onChange={handleFormChange} onSave={save} onClose={() => setModal(false)} />
       <ConfirmDialog open={!!deleteId} message="이 채무를 삭제하시겠습니까?" onConfirm={confirmDelete} onCancel={() => setDeleteId(null)} />
     </div>
   )
